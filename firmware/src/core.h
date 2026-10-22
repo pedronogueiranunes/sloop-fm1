@@ -109,6 +109,7 @@ enum {                          /* global parameters */
                                  * while SYNC is INT (seq.c clkout_block; a setting of the FM-1, kept in DR MAP's byte) */
     G_FXFADE,                   /* SLOOP 2.7.2, the FX layer (FX held), SELECT: how fast a punch-in FX fades in and out, 0 (instant, as
                                  * before) .. 15 (punch.c; a setting of the FM-1, kept in BEND's byte) */
+    G_CH4, G_CH5,               /* sloop-peeeo, GLO > MIDI: the MIDI channels of synth tracks 4 and 5 (settings of the FM-1) */
     G_COUNT
 };
 

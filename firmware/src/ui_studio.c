@@ -7,6 +7,19 @@
  * confirm: clear, save), REC (armed / free take). Every band is drawn into the canvas only when its
  * signature changed. */
 #include "chord.c"                                /* sloop-peeeo: the notes and chord a synth track plays */
+/* sloop-peeeo: six tracks, four rows on TRACKS: the first one in view, moved so the selected track is always in it.
+ * The GLO layer's KNOB 1..4 are the levels of these four (ui_layers.c) */
+static uint8_t trk_top;
+UI_SMALL static uint32_t trk_view_top(void)
+{
+    if (song.sel < trk_top)
+        trk_top = song.sel;
+    else if (song.sel >= trk_top + 4u)
+        trk_top = (uint8_t)(song.sel - 3u);
+    if (trk_top > NTRK - 4u)
+        trk_top = NTRK - 4u;
+    return trk_top;
+}
 static uint8_t drum_page, drum_cursor;   /* drum_page: 0 GRID, 1 KIT, 2 SOUND (2.7: a sound's TUNE, DECAY) */
 #define drum_lane pen_lane                 /* (2.7.1) one drum sound picked everywhere: the GRID, SOUND, the SEQ layer, a pad
                                             * played (seq.c pen_lane) */
@@ -235,17 +248,11 @@ UI_SMALL static void swing_str(char *b, int32_t v)            /* 0 straight .. 1
 UI_SMALL static void studio_tracks_draw(void)
 {
     static uint32_t head, rows[NTRK], footer, bar;
-    static uint8_t top;                                  /* sloop-peeeo: the first of the four rows in view */
-    uint32_t i, j;
+    uint32_t i, j, top;
     int32_t sect = song.playing && live_sec >= 0 ? live_sec : (int32_t)song.g[G_SLOT] - 1;   /* (2.7.2) the section playing */
     te_header("tracks", TE_G3, &head, sect);
     /* sloop-peeeo: six tracks, four rows: the list scrolls so the selected track is always in view */
-    if (song.sel < top)
-        top = song.sel;
-    else if (song.sel >= top + 4u)
-        top = (uint8_t)(song.sel - 3u);
-    if (top > NTRK - 4u)
-        top = NTRK - 4u;
+    top = trk_view_top();
     if (ui.force || bar != 1u + top) {                   /* where the four rows are in the list: a thin bar, right */
         bar = 1u + top;
         memset(rows, 0, sizeof rows);                   /* (scrolled: every row in view drawn again) */

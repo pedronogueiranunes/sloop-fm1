@@ -3,7 +3,7 @@
 /* Felucca user interface. Four columns map to KNOB 1..4. Rendering is lazy:
  * every element remembers what it last drew and is redrawn only on change. */
 #ifndef FELUCCA_VERSION
-#define FELUCCA_VERSION "SLOOP 2.8 PEEEO 6T3"  /* the beat machine firmware for the FM-1 (based on Felucca) */
+#define FELUCCA_VERSION "SLOOP 2.8 PEEEO 6T4"  /* the beat machine firmware for the FM-1 (based on Felucca) */
 #endif
 static void project_save(uint32_t slot);
 static void arrangement_save(void);
@@ -131,7 +131,7 @@ UI_SMALL static void page_entered(void)
 {
     const page_t *pg = cur_page();
     song.seq_mode = !ui.home && pg->fam == FAM_SEQ;
-    if (!ui.home && pg->fam == FAM_GLO && pg->id[0] == G_CH1 && song.g[G_ROUTE]) {   /* (2.6) GLO > MIDI while MIDI 2 >
+    if (!ui.home && pg->fam == FAM_GLO && (pg->id[0] == G_CH1 || pg->id[0] == G_CH5) && song.g[G_ROUTE]) {   /* (2.6) GLO > MIDI while MIDI 2 >
                                                                                    * IN sets the channels aside */
         if (song.g[G_ROUTE] == 1)
             ui_message("IN = CLOCK: NO NOTES");
@@ -152,10 +152,10 @@ UI_SMALL static void page_entered(void)
  * turned, and says whose it was. Every frame (ui_input) */
 UI_SMALL static void midi_chan_fix(void)
 {
-    static const uint8_t ID[4] = {G_CH1, G_CH2, G_CH3, G_DRCH};
-    static int16_t was[4] = {-1, -1, -1, -1};
+    static const uint8_t ID[NTRK] = {G_CH1, G_CH2, G_CH3, G_CH4, G_CH5, G_DRCH};   /* (sloop-peeeo: the six, by track) */
+    static int16_t was[NTRK] = {-1, -1, -1, -1, -1, -1};
     uint32_t k, j;
-    for (k = 0; k < 4u; k++) {
+    for (k = 0; k < NTRK; k++) {
         int32_t v = song.g[ID[k]], dir, owner = -1;
         if (was[k] < 0 || v == was[k] || !v) {
             was[k] = (int16_t)v;
@@ -164,7 +164,7 @@ UI_SMALL static void midi_chan_fix(void)
         dir = v > was[k] ? 1 : -1;
         for (;;) {
             int32_t o = -1;
-            for (j = 0; j < 4u; j++)
+            for (j = 0; j < NTRK; j++)
                 if (j != k && song.g[ID[j]] == v)
                     o = (int32_t)j;
             if (o < 0)
@@ -182,10 +182,13 @@ UI_SMALL static void midi_chan_fix(void)
             }
         }
         if (owner >= 0) {
-            char b[8];
+            char b[8], o[12];
             str_cpy(b, "CH ", sizeof b);
             fmt_int(b + 3, song.g[ID[k]]);
-            ui_say(b, owner == 3 ? " = DRUMS" : owner == 0 ? " = TRACK 1" : owner == 1 ? " = TRACK 2" : " = TRACK 3");
+            str_cpy(o, owner == (int32_t)TRK_DRUM ? " = DRUMS" : " = TRACK 1", sizeof o);
+            if (owner != (int32_t)TRK_DRUM)
+                o[9] = (char)('1' + owner);
+            ui_say(b, o);
             song.g[ID[k]] = (int16_t)v;
         }
         was[k] = (int16_t)v;
@@ -1086,7 +1089,7 @@ UI_SMALL static void ml_poll(void)
     cc--;
     r = ml_learn(cc, mlu.trk, mlu.id);
     if (r != 1u) {
-        ui_message(r ? "CC NOT LEARNABLE" : "LEARN FULL");
+        ui_message(r && TRK_LEGACY(mlu.trk) > 3u ? "LEARN: TRACKS 1-3, DRUMS" : r ? "CC NOT LEARNABLE" : "LEARN FULL");
         return;
     }
     str_cpy(a, "CC", 4);

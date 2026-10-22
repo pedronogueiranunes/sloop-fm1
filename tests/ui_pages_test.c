@@ -862,10 +862,10 @@ int main(int argc, char **argv)
             open_family(FAM_SEQ); frame();            /* (round to STEP again: SEQ opens there, as before) */
             go_home(); frame();
             open_family(FAM_GLO); frame();
-            (void)page_pos(&n);                       /* GLO: its nine pages */
+            (void)page_pos(&n);                       /* GLO: its ten pages (sloop-peeeo: MIDI CH) */
             go_home(); frame();
             ui.menu = (uint8_t)menu0, ui.menu_sel = (uint8_t)sel0, ui.force = 1; frame();
-            ok &= k1 == 1u && n1 == 2u && k2 == 2u && n2 == 2u && k3 == 3u && n3 == 3u && n == 9u;
+            ok &= k1 == 1u && n1 == 2u && k2 == 2u && n2 == 2u && k3 == 3u && n3 == 3u && n == 10u;
             if (!ok)
                 printf("ui:   counter: STEP %u/%u PATTERN %u/%u SONG %u/%u GLO /%u\n", k1, n1, k2, n2, k3, n3, n);
             check(ok, "page counter (2.7): as SELECT walks them: STEP 1/2, PATTERN 2/2 (SONG, its own screen, not counted)");
@@ -1786,22 +1786,23 @@ int main(int argc, char **argv)
                 frames(16);
             }
             {   /* 2.6: every MIDI setting in MIDI and MIDI 2; no channel on two tracks */
-                const page_t *m = cur_page(), *m2 = &PAGES[ui.page + 1u];
+                const page_t *m = cur_page(), *mc = &PAGES[ui.page + 1u], *m2 = &PAGES[ui.page + 2u];
                 const char *u;
                 char vv[12];
                 param_format(&GP[G_DRCH], 0, vv, &u);
-                check(m->id[0] == G_CH1 && m->id[1] == G_CH2 && m->id[2] == G_CH3 && m->id[3] == G_DRCH && !strcmp(m2->title, "MIDI 2") &&
+                check(m->id[0] == G_CH1 && m->id[1] == G_CH2 && m->id[2] == G_CH3 && m->id[3] == G_CH4 &&
+                      !strcmp(mc->title, "MIDI CH") && mc->id[0] == G_CH5 && mc->id[1] == G_DRCH && !strcmp(m2->title, "MIDI 2") &&
                       m2->id[0] == G_ROUTE && m2->id[1] == G_CHOTH && m2->id[2] == G_MIDI && m2->id[3] == G_BEND &&
-                      !strcmp(GP[G_DRCH].label, "CH4") && !strcmp(vv, "OFF"),
-                      "GLO > MIDI: CH1 CH2 CH3 CH4 (the drums); MIDI 2: IN OTHER OUT BEND; CH4 0 reads OFF");
+                      !strcmp(GP[G_DRCH].label, "DRUM") && !strcmp(vv, "OFF"),
+                      "GLO > MIDI (six tracks): CH1 CH2 CH3 CH4; MIDI CH: CH5 DRUM; MIDI 2: IN OTHER OUT BEND; DRUM 0 reads OFF");
                 song.g[G_CH2] = 2, frame();
-                K(EN_K2, 1);                              /* CH2 2 -> 3: track 3's: on to 4 */
-                check(song.g[G_CH2] == 4 && !strcmp(ui.msg, "CH 3 = TRACK 3"), "GLO > MIDI: CH2 turned onto track 3's channel: on to 4, \"CH 3 = TRACK 3\"");
-                K(EN_K2, -1);                             /* back: 3 taken, on to 2 */
-                check(song.g[G_CH2] == 2, "  turned back: over 3 again, to 2");
-                K(EN_K4, -7);                             /* DR CH 10 -> 3: track 3's, then 2, 1 (taken): OFF */
-                check(song.g[G_DRCH] == 0, "  the drums turned down onto 3, 2, 1 (all taken): OFF");
-                song.g[G_DRCH] = 10, frame();
+                K(EN_K2, 1);                              /* CH2 2 -> 3: track 3's, 4 and 5 tracks 4 and 5's: on to 6 */
+                check(song.g[G_CH2] == 6 && !strcmp(ui.msg, "CH 3 = TRACK 3"), "GLO > MIDI: CH2 turned onto track 3's channel: past tracks 4, 5's to 6, \"CH 3 = TRACK 3\"");
+                K(EN_K2, -1);                             /* back: 5, 4, 3 taken, on to 2 */
+                check(song.g[G_CH2] == 2, "  turned back: over 5, 4, 3 again, to 2");
+                K(EN_K4, -1);                             /* CH4 4 -> 3: track 3's, then 2, 1 (taken): OFF */
+                check(song.g[G_CH4] == 0, "  track 4 turned down onto 3, 2, 1 (all taken): OFF");
+                song.g[G_CH4] = 4, frame();
                 song.g[G_ROUTE] = 6;                      /* IN = CH 5 */
                 go_home(); frame();
                 open_family(FAM_GLO); frame();

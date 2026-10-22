@@ -77,7 +77,7 @@ static uint32_t trk_index(const track_t *t) { return (uint32_t)(t - trk); }
 
 static uint32_t trk_midi_ch(uint32_t i)    /* MIDI channel 0..15 of track i (keys -> MIDI out); 2.6: GLO > MIDI */
 {                                          /* (2.6: OFF is OFF, in and out: 0xFF, nothing sent) */
-    int32_t c = i < 3u ? song.g[G_CH1 + i] : i < NPART ? (int32_t)i + 1 : song.g[G_DRCH];   /* (sloop-peeeo: 4, 5 on 4, 5) */
+    int32_t c = i < 3u ? song.g[G_CH1 + i] : i == 3u ? song.g[G_CH4] : i == 4u ? song.g[G_CH5] : song.g[G_DRCH];   /* (sloop-peeeo) */
     return c >= 1 && c <= 16 ? (uint32_t)c - 1u : 0xFFu;
 }
 /* a note on (vel > 0) / off to MIDI OUT on channel ch (trk_midi_ch: 0xFF, the track's MIDI OFF: nothing) */
@@ -2605,7 +2605,7 @@ static track_t *midi_own(uint32_t ch)
     if (song.g[G_DRCH] && ch + 1u == (uint32_t)song.g[G_DRCH])
         return TDRUM;
     for (i = 0; i < NPART; i++)
-        if (ch + 1u == (i < 3u ? (uint32_t)song.g[G_CH1 + i] : i + 1u))   /* (sloop-peeeo: tracks 4, 5: channels 4, 5) */
+        if (ch + 1u == (uint32_t)song.g[i < 3u ? G_CH1 + i : i == 3u ? G_CH4 : G_CH5])   /* (sloop-peeeo: CH4, CH5) */
             return &trk[i];
     return 0;
 }

@@ -16,7 +16,7 @@
  *                                                 (normal, fill only, no fill), OCT- clears its nudge, locks and
  *                                                 condition
  *   SEL   any key: the key of the song     knobs: CHORD  SCALE  KEYS  TRANSPOSE
- *   GLO   keys 1..4 mute, 5..8 solo,       knobs: the levels of tracks 1..4
+ *   GLO   keys 1..6 mute, 7..12 solo,      knobs: the levels of the four tracks in view (sloop-peeeo)
  *         9 fill while held, 10 fill the next bar, the last white key: tap tempo
  *   SAVE  keys 1..4 play section A..D (on the next bar; two or more tapped while SAVE stays held: a chain of
  *         them, looped, each for its pattern's bars), 5..8 store the loop into A..D, 13 loop / song,
@@ -562,7 +562,8 @@ UI_SMALL static void layer_knobs(uint32_t layer)
             }
             break;
         case LY_MIX: {
-            int16_t *lv = TRK_FROM_LEGACY(k) == TRK_DRUM ? &song.g[G_DRLVL] : &trk[TRK_FROM_LEGACY(k)].p[P_LEVEL];
+            uint32_t tk = trk_view_top() + k;           /* (sloop-peeeo: the four tracks in view on TRACKS) */
+            int16_t *lv = tk == TRK_DRUM ? &song.g[G_DRLVL] : &trk[tk].p[P_LEVEL];
             *lv = (int16_t)clamp(*lv + accel(EN_K1 + k, s, 127), 0, 127);
             break;
         }
@@ -983,10 +984,10 @@ UI_SMALL static void layer_screen_draw(void)
         tl[15].fg = tl[15].bg == C_WHITE ? C_BLACK : C_WHITE;
         str_cpy(tl[14].lab, "tap>", 8);
         tl[14].bg = C_BLACK;
-        for (i = 0; i < 4u; i++) {                      /* (KNOB 1..4: tracks 1..3 and the drums, as before) */
-            uint32_t lv = trk_level(TRK_FROM_LEGACY(i));
-            static const char *const L[4] = {"1", "2", "3", "dr"};
-            lab[i] = L[i];
+        for (i = 0; i < 4u; i++) {                      /* (KNOB 1..4: the four tracks in view on TRACKS) */
+            uint32_t tk = trk_view_top() + i, lv = trk_level(tk);
+            static const char *const L[NTRK] = {"1", "2", "3", "4", "5", "dr"};
+            lab[i] = L[tk];
             fmt_int(v[i], (int32_t)lv * 100 / 127);
             ratio[i] = (int32_t)lv * 1000 / 127;
         }
