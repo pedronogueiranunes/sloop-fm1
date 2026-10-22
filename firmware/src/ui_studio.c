@@ -781,10 +781,13 @@ UI_SMALL static void te_digit(int32_t x, int32_t y, int32_t w, int32_t h, int32_
 }
 
 static uint8_t rec_shown;
-/* the four tracks, compact, from y0: the one that records is framed in red */
+/* the tracks, compact, from y0: the one that records is framed in red (sloop-peeeo: four rows, as before; with six
+ * tracks the four in view follow the one that records, as the TRACKS list does) */
 UI_SMALL static void rec_rows(uint32_t rt, uint32_t take, uint32_t y0, uint32_t *cache)
 {
-    uint32_t sig = rt * 3u + rec_wait + take * 5u + drum_kit() * 977u + y0, i, j;
+    uint32_t nr = NTRK < 4u ? NTRK : 4u, top, i, j, sig;
+    top = rt < NTRK && rt >= nr ? rt - nr + 1u : 0u;
+    sig = rt * 3u + rec_wait + take * 5u + drum_kit() * 977u + y0 + top * 7919u;
     for (i = 0; i < NTRK; i++) {
         char b[16];
         if (i == TRK_DRUM) str_cpy(b, DRUM_KIT_NAMES[drum_kit()], sizeof b);
@@ -795,14 +798,14 @@ UI_SMALL static void rec_rows(uint32_t rt, uint32_t take, uint32_t y0, uint32_t 
     if (!ui.force && sig == *cache)
         return;
     *cache = sig;
-    cv_begin(240, 76, C_BLACK);
-    for (i = 0; i < NTRK; i++) {
+    cv_begin(240, nr * 19u, C_BLACK);
+    for (i = top; i < top + nr; i++) {
         const track_t *t = &trk[i];
         uint32_t len = (uint32_t)clamp(t->p[P_SLEN], 1, 64), armed = i == rt;
-        int32_t y = (int32_t)i * 19;
+        int32_t y = (int32_t)(i - top) * 19;
         char b[16];
         if (armed) cv_rect(0, y, 240, 18, TE_RED), cv_rect(1, y + 1, 238, 16, C_BLACK);
-        cv_rect(4, y + 3, 12, 12, armed ? TE_COL[i] : TE_DIM[i]);
+        cv_rect(4, y + 3, 12, 12, armed ? trk_col(i) : trk_dim(i));
         if (i == TRK_DRUM) str_cpy(b, DRUM_KIT_NAMES[drum_kit()], sizeof b);
         else trk_short_name(i, b);
         b[10] = 0;
@@ -811,7 +814,7 @@ UI_SMALL static void rec_rows(uint32_t rt, uint32_t take, uint32_t y0, uint32_t 
             uint32_t a = j * len / 16u, z = (j + 1u) * len / 16u, k, on = 0;
             if (z == a) z = a + 1u;
             for (k = a; k < z && k < NSTEP; k++) if (trk_step_on(t, k)) on = 1;
-            cv_rect(106 + (int32_t)j * 8, y + 5, 6, 8, on ? (armed ? TE_COL[i] : TE_DIM[i]) : TE_G1);
+            cv_rect(106 + (int32_t)j * 8, y + 5, 6, 8, on ? (armed ? trk_col(i) : trk_dim(i)) : TE_G1);
         }
     }
     cv_blit(0, y0);
@@ -852,7 +855,7 @@ UI_SMALL static void rec_screen_draw(void)
             cv_rect(132, 6, 1, 54, TE_G1);
             if (bars) {
                 fmt_int(b, (int32_t)bars);
-                cv_text(146, 4, &FONT_L, b, TE_COL[rt & 3u]);
+                cv_text(146, 4, &FONT_L, b, trk_col(rt));
                 cv_text(146 + text_w(&FONT_L, b) + 6, 18, &FONT_S, bars == 1u ? "bar" : "bars", TE_G3);
                 fmt_int(b, (int32_t)bpm);
                 cv_text(146, 42, &FONT_S, b, C_WHITE);
