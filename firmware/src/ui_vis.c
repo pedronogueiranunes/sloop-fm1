@@ -22,7 +22,7 @@ static int16_t vis_re[VIS_FFT] __attribute__((section(".pool"))), vis_im[VIS_FFT
 #define vis_r (main_scratch.vis[1])
 _Static_assert(sizeof main_scratch.vis[0] == VIS_FFT * sizeof(int16_t), "the scratch holds the snapshot");
 static uint8_t vis_sg[VIS_SG_H][VIS_SG_W] __attribute__((section(".pool")));
-static uint8_t vis_lj[3][256][2];                   /* Lissajous: the last three frames' points */
+static uint8_t vis_lj[3][256][2] __attribute__((section(".pool")));   /* Lissajous: the last three frames' points (sloop-peeeo: in the pool) */
 static struct {
     int32_t scale, ljscale, peak;                   /* auto-scales (smoothed peaks), this frame's peak */
     int16_t bar[32], cap[32], capv[32];             /* spectrum: bars, caps and their fall speed (0..1000) */
@@ -221,7 +221,7 @@ static void vis_update(void)
     }
     /* the tracks' peaks since the last look (as the TRACKS meters take them) and the notes that started */
     fm1_irq_off();
-    for (i = 0; i < NPART; i++) {
+    for (i = 0; i < 3u; i++) {                       /* (sloop-peeeo: the visualiser's four are tracks 1..3 and the drums) */
         pk[i] = trk[i].peak;
         trk[i].peak = 0;
     }
@@ -235,7 +235,7 @@ static void vis_update(void)
     }
     fm1_irq_on();
     for (i = 0; i < 4u; i++) {
-        int32_t v = trk_level(i) && !trk[i].p[P_MUTE] ? vis_lvl(pk[i]) : 0;   /* (as the TRACKS meters) */
+        int32_t v = trk_level(TRK_FROM_LEGACY(i)) && !trk[TRK_FROM_LEGACY(i)].p[P_MUTE] ? vis_lvl(pk[i]) : 0;   /* (as the TRACKS meters) */
         vs.lvl[i] = (int16_t)v;
         if ((hit >> i) & 1u) {
             vs.flash[i] = 8;
@@ -609,12 +609,12 @@ static void vis_chords(void)
 {
     uint32_t tr = chd.trk < NPART ? chd.trk : song.sel < NPART ? song.sel : 0u, i, j, oct, lo, nw;
     const track_t *t = &trk[tr];
-    uint16_t col = chd.live ? TE_COL[tr] : TE_MID[tr], txt = chd.live ? C_WHITE : TE_G3;
+    uint16_t col = chd.live ? trk_col(tr) : trk_mid(tr), txt = chd.live ? C_WHITE : TE_G3;
     int32_t kw, x0, x;
     char b[40], r[4];
     {   /* the track followed, and its key */
         char n[2] = {(char)('1' + tr), 0};
-        cv_rect(8, 26, 16, 16, TE_COL[tr]);
+        cv_rect(8, 26, 16, 16, trk_col(tr));
         cv_text(12, 26, &FONT_S, n, C_BLACK);
         trk_short_name(tr, b);
         cv_text(32, 26, &FONT_S, b, TE_G4);

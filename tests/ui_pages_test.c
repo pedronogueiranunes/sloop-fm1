@@ -378,20 +378,20 @@ int main(int argc, char **argv)
     release(B_SCL);
     press(B_GLO); frames(10);
     key(0); check(trk[0].p[P_MUTE] == 1, "GLO + key 1: track 1 muted");
-    key(9); check(song.solo == 2u, "GLO + key 6: track 2 soloed");
+    key(key_of_white(7)); check(song.solo == 2u, "GLO + key 8 (six tracks): track 2 soloed");
     ppm("layer-mix");
     for (i = 0; i < 4u; i++) { fm1_in.notes = 1u << 26; frame(); fm1_in.notes = 0; frames(36); }   /* ~0.6 s apart */
     check(song.g[G_BPM] >= 95 && song.g[G_BPM] <= 105, "GLO + the last key, tapped at ~0.6 s: ~100 BPM");
-    key(0); key(9);
+    key(0); key(key_of_white(7));
     check(!trk[0].p[P_MUTE] && !song.solo, "again: unmuted, no solo");
     /* (2.4) key 9 held: a fill; key 10: the next bar is one (again: cancelled) */
-    fm1_in.notes = 1u << key_of_white(8); frame(); frame();
-    check(fill_held == 1u && fill_now == 1u && (keys_lit() & (1u << key_of_white(8))) != 0, "GLO + key 9 held: FILL (the key lit)");
+    fm1_in.notes = 1u << key_of_white(12); frame(); frame();
+    check(fill_held == 1u && fill_now == 1u && (keys_lit() & (1u << key_of_white(12))) != 0, "GLO + key 13 held: FILL (the key lit)");
     ui.force = 1; frame(); ppm("layer-mix-fill");
     fm1_in.notes = 0; frame(); frame();
-    check(fill_held == 0u && fill_now == 0u, "key 9 let go: the fill ends");
-    key(key_of_white(9)); check(fill_arm == 1u && (keys_lit() & (1u << key_of_white(9))) != 0, "GLO + key 10: FILL NEXT BAR armed (the key lit)");
-    key(key_of_white(9)); check(fill_arm == 0u, "GLO + key 10 again: cancelled");
+    check(fill_held == 0u && fill_now == 0u, "key 13 let go: the fill ends");
+    key(key_of_white(13)); check(fill_arm == 1u && (keys_lit() & (1u << key_of_white(13))) != 0, "GLO + key 14: FILL NEXT BAR armed (the key lit)");
+    key(key_of_white(13)); check(fill_arm == 0u, "GLO + key 14 again: cancelled");
     release(B_GLO);
     fm1_in.notes = 1u << key_of_white(8); frame();     /* (no layer: a plain key, no fill) */
     check(fill_held == 0u, "key 9 without GLO: no fill");
@@ -671,7 +671,7 @@ int main(int argc, char **argv)
         {   /* every screen and layer: lit where the keys are notes, a glow under the tiles */
             static const struct { uint32_t ly; int lit; const char *name; } L[] = {
                 {LY_ERASE, 1, "EDIT erase"}, {LY_ROLL, 1, "ARP roll"}, {LY_SCALE, 1, "SEL key"}, {LY_SONG, 1, "SAVE song"},
-                {LY_FX, 0, "FX punch"}, {LY_STEP, 0, "SEQ steps"}, {LY_MIX, 0, "GLO mix"}};
+                {LY_FX, 0, "FX punch"}, {LY_STEP, 0, "SEQ steps"}};   /* (six tracks: GLO's C4 is MUTE 5, lit while track 5 plays) */
             uint32_t k, ok = 1, ly0 = ui.layer;
             char what[96];
             for (k = 0; k < sizeof L / sizeof L[0]; k++) {
@@ -1347,7 +1347,7 @@ int main(int argc, char **argv)
         for (j = 0; j < NPAGES; j++) if (!strcmp(PAGES[j].title, "NOTES")) break;
         open_family(FAM_SEQ); ui.page = (uint8_t)j; ui.fam_last[FAM_SEQ] = (uint8_t)j; page_entered(); ui.force = 1; frames(2);
         b0 = ui.page;
-        for (j = 0; j < 3u; j++) { encs[panel.enc[EN_ALGO]] = 1; frames(2); }
+        for (j = 0; j < NTRK - 1u; j++) { encs[panel.enc[EN_ALGO]] = 1; frames(2); }
         check(song.sel == TRK_DRUM && ui.page == b0 && !page_for_drum(cur_page()) && !strcmp(PAGES[ui.page].title, "NOTES"),
               "STEP on the drum track: not a page for the drums (DRUM TRACK shown, no piano roll of the drum steps)");
         for (j = 0; j < NSTEP; j++) memset(&TDRUM->dstep[j], 0, sizeof(dstep_t));
@@ -1657,7 +1657,7 @@ int main(int argc, char **argv)
             frame();
             check(trk[1].eng_req == BANK[0].e && trk[1].preset == bank_pi[0] && !strncmp(ui.msg, "T2 PROG 0", 9),
                   "MIDI Program Change 0: track 2 takes the first sound of the PRESETS list (T2 PROG 0)");
-            pc_req[3] = 3;                                /* PC 2 on the drum channel: kit 2 */
+            pc_req[TRK_DRUM] = 3;                         /* PC 2 on the drum channel: kit 2 */
             frame();
             check(TDRUM->p[P_E0] == 2, "MIDI Program Change on the drum channel: kit 2");
             pc_req[1] = (uint8_t)(tot + 1u);              /* past the end: nothing */

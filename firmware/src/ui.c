@@ -3,7 +3,7 @@
 /* Felucca user interface. Four columns map to KNOB 1..4. Rendering is lazy:
  * every element remembers what it last drew and is redrawn only on change. */
 #ifndef FELUCCA_VERSION
-#define FELUCCA_VERSION "SLOOP 2.8 PEEEO"  /* the beat machine firmware for the FM-1 (based on Felucca) */
+#define FELUCCA_VERSION "SLOOP 2.8 PEEEO 6T"  /* the beat machine firmware for the FM-1 (based on Felucca) */
 #endif
 static void project_save(uint32_t slot);
 static void arrangement_save(void);
@@ -30,6 +30,13 @@ static uint8_t sync_reload;                  /* engine / preset / project / user
 
 #define ACC C_HI                   /* amber everywhere; white is the only accent */
 #define VAL(c) ((c) == ui.hot_col && ui.hot_t ? C_WHITE : TE_COL[(c) & 3u])   /* LIVE: one colour per knob */
+/* sloop-peeeo: a track's colour: tracks 1..3 and the drums as ever, tracks 4 and 5 violet and pink */
+static uint16_t trk_col(uint32_t i)
+{
+    return i == TRK_DRUM ? TE_COL[3] : i < 3u ? TE_COL[i] : i == 3u ? RGB(176, 104, 255) : RGB(255, 86, 168);
+}
+static uint16_t trk_mid(uint32_t i) { return i == TRK_DRUM ? TE_MID[3] : i < 3u ? TE_MID[i] : rgb565_scale(trk_col(i), 2u, 3u); }
+static uint16_t trk_dim(uint32_t i) { return i == TRK_DRUM ? TE_DIM[3] : i < 3u ? TE_DIM[i] : rgb565_scale(trk_col(i), 1u, 3u); }
 #define RATIO(d, v) ((d)->max > (d)->min ? ((int32_t)(v) - (d)->min) * 1000 / ((d)->max - (d)->min) : -1)
 /* layout: four 60 px columns, 4 px inset */
 /* Terminus 8x16 (S) and 16x32 (L) */
@@ -527,7 +534,7 @@ UI_SMALL static void go_home(void)
  * writes the sequencer: every pattern is the one the player records or enters. */
 
 /* the parts' sounds at power-on (engine, preset): bass, pad, lead */
-static const uint8_t TRK_DEF[NPART][2] = {{0, 0}, {1, 0}, {4, 5}};   /* ANALOG 808 BOOM, DIGITAL RHODES, SAMPLE LOFI FLUTE */
+static const uint8_t TRK_DEF[NPART][2] = {{0, 0}, {1, 0}, {4, 5}, {1, 3}, {1, 2}};   /* ANALOG 808 BOOM, DIGITAL RHODES, SAMPLE LOFI FLUTE; sloop-peeeo: DIGITAL CLAV, WURLI (light engines) */
 UI_SMALL static uint32_t trk_def_engine(uint32_t i) { return i < NPART ? TRK_DEF[i][0] : 0u; }
 
 UI_SMALL static int seq_is_empty(const track_t *t) { return track_empty(t); }
@@ -1016,8 +1023,9 @@ UI_SMALL static uint32_t ml_count(void)
 UI_SMALL static uint32_t ml_learn(uint32_t cc, uint32_t k, uint32_t id)
 {
     uint32_t i, e;
-    if (!ml_free_cc(cc) || k >= NTRK || id >= P_COUNT)
-        return 2;
+    if (!ml_free_cc(cc) || k >= NTRK || TRK_LEGACY(k) > 3u || id >= P_COUNT)
+        return 2;                                           /* (sloop-peeeo: tracks 4, 5 cannot learn yet) */
+    k = TRK_LEGACY(k);
     for (i = 0; i < ML_N; i++)
         if ((e = ml_tab[i]) >> 9 && ((e & 127u) == cc || ((e >> 9) == ml_code(id) && ((e >> 7) & 3u) == k)))
             ml_put(i, 0);

@@ -234,18 +234,34 @@ UI_SMALL static void swing_str(char *b, int32_t v)            /* 0 straight .. 1
 
 UI_SMALL static void studio_tracks_draw(void)
 {
-    static uint32_t head, rows[NTRK], footer;
+    static uint32_t head, rows[NTRK], footer, bar;
+    static uint8_t top;                                  /* sloop-peeeo: the first of the four rows in view */
     uint32_t i, j;
     int32_t sect = song.playing && live_sec >= 0 ? live_sec : (int32_t)song.g[G_SLOT] - 1;   /* (2.7.2) the section playing */
     te_header("tracks", TE_G3, &head, sect);
-    for (i = 0; i < NTRK; i++) {
+    /* sloop-peeeo: six tracks, four rows: the list scrolls so the selected track is always in view */
+    if (song.sel < top)
+        top = song.sel;
+    else if (song.sel >= top + 4u)
+        top = (uint8_t)(song.sel - 3u);
+    if (top > NTRK - 4u)
+        top = NTRK - 4u;
+    if (ui.force || bar != 1u + top) {                   /* where the four rows are in the list: a thin bar, right */
+        bar = 1u + top;
+        memset(rows, 0, sizeof rows);                   /* (scrolled: every row in view drawn again) */
+        cv_begin(2, 144, C_BLACK);
+        cv_rect(0, 0, 2, 144, TE_G1);
+        cv_rect(0, (int32_t)top * 144 / (int32_t)NTRK, 2, 4 * 144 / (int32_t)NTRK, TE_G3);
+        cv_blit(238, 40);
+    }
+    for (i = top; i < top + 4u && i < NTRK; i++) {
         track_t *t = &trk[i];
         char b[24], e[16];
         uint32_t selected = song.sel == i, len = (uint32_t)clamp(t->p[P_SLEN], 1, 64);
         uint32_t level = i == TRK_DRUM ? song.g[G_DRLVL] : t->p[P_LEVEL];
         uint32_t silent = trk_silent(t) || !level, pos = t->seq_idx % len, rec = (song.rec >> i) & 1u;
         uint32_t solo = (song.solo >> i) & 1u, bank = song.playing ? pos / 16u : 0u, h;
-        uint16_t col = TE_COL[i], dim = TE_DIM[i];
+        uint16_t col = trk_col(i), dim = trk_dim(i);
         if (i == TRK_DRUM) {
             str_cpy(b, DRUM_KIT_NAMES[drum_kit()], sizeof b);
             te_lower(e, "drums", sizeof e);
@@ -261,7 +277,7 @@ UI_SMALL static void studio_tracks_draw(void)
         for (j = 0; j < len; j++) h = h * 31u + (uint32_t)trk_step_on(t, j);
         if (!ui.force && h == rows[i]) continue;
         rows[i] = h;
-        cv_begin(240, 36, C_BLACK);
+        cv_begin(236, 36, C_BLACK);                     /* (sloop-peeeo: 236: the scroll bar right of it) */
         cv_rect(2, 3, 26, 30, selected ? col : dim);   /* the track tile */
         {
             char n[2] = {(char)('1' + i), 0};
@@ -302,7 +318,7 @@ UI_SMALL static void studio_tracks_draw(void)
         cv_rect(198, 23, 38, 5, TE_G1);                /* the level */
         if (!silent)
             cv_rect(198, 23, (int32_t)level * 38 / 127, 5, selected ? col : TE_G3);
-        cv_blit(0, 40 + i * 36);
+        cv_blit(0, 40 + (i - top) * 36);
     }
     {   /* KNOB 1 swing (the global groove), 2 level, 3 steps, 4 pan of the selected track */
         track_t *t = TSEL;
@@ -684,7 +700,7 @@ UI_SMALL static void drum_screen_input(uint32_t pressed, uint32_t home, uint32_t
             }
     }
     if ((s = panel_enc(EN_ALGO)) && !ft_on) {
-        track_select((uint32_t)clamp((int32_t)song.sel + s, 0, 3));
+        track_select((uint32_t)clamp((int32_t)song.sel + s, 0, NTRK - 1));
         if (song.sel != TRK_DRUM) {
             go_home();
             return;
