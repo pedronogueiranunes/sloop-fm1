@@ -13,6 +13,11 @@ Free and open source (GPL-3.0), based on <a href="https://github.com/hugelton/Fe
 <a href="../../issues">Report a bug</a>
 </p>
 
+> **This is sloop-peeeo, a personal fork of [SLOOP](https://github.com/isod89/sloop-fm1)** by isod89, itself based on Felucca. It adds:
+> - **Chords on screen:** the notes and chord name of the selected synth track on the TRACKS screen, and a new CHORDS visualiser (style 13) with the chord, its degree in the key, its notes and a lit keyboard. See [Chords on screen](GUIDE.md#chords-on-screen).
+>
+> Builds of this fork are modified versions of SLOOP, under the same GPL-3.0 licence. Everything else below is the original project's README.
+
 ---
 
 SLOOP turns the FM-1 into a four-track groovebox you play live: **three synths and a drum machine** with 16 sounds on the white keys, twelve synthesis engines, 153 sounds, 37 drum kits, your own samples, a song mode you play with your hands, USB audio, MIDI in on the jack and MIDI clock — and now **physical models** (guitars, sitar, bells, hand drums), a **noise** engine, **six-operator FM with DX7 patches**, **parameter locks**, **micro timing**, **fills**, a **quick chain** of sections and the **sequencer to MIDI out**. House, techno, hip-hop, trap, drum & bass, amapiano, synthwave, lo-fi, ambient, chiptune — it does not pick a style for you. No factory patterns, nothing to load: everything you hear, you play.
