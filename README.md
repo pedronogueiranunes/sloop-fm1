@@ -13,10 +13,50 @@ Free and open source (GPL-3.0), based on <a href="https://github.com/hugelton/Fe
 <a href="../../issues">Report a bug</a>
 </p>
 
-> **This is sloop-peeeo, a personal fork of [SLOOP](https://github.com/isod89/sloop-fm1)** by isod89, itself based on Felucca. It adds:
-> - **Chords on screen:** the notes and chord name of the selected synth track on the TRACKS screen, and a new CHORDS visualiser (style 13) with the chord, its degree in the key, its notes and a lit keyboard. See [Chords on screen](GUIDE.md#chords-on-screen).
->
-> Builds of this fork are modified versions of SLOOP, under the same GPL-3.0 licence. Everything else below is the original project's README.
+> [!IMPORTANT]
+> **This is a fork, not the official SLOOP.** sloop-peeeo is a personal fork of [SLOOP](https://github.com/isod89/sloop-fm1) by isod89, which is itself based on [Felucca](https://github.com/hugelton/Felucca) by Leo Kuroshita / Hügelton Instruments. It is maintained by Pedro Nogueira Nunes for playing live as peeeo, and the parts that make sense for everyone are offered back to SLOOP as pull requests. For the official firmware, the browser installer and support, use the [original repository](https://github.com/isod89/sloop-fm1).
+
+## What this fork changes
+
+Based on **SLOOP 2.8**. The 2.8.1 update from the original project is not merged here yet. Everything not listed below works exactly as in SLOOP 2.8. The version on the boot screen tells the builds apart: official SLOOP shows `2.8`, this fork shows `2.8 PEEEO` or `2.8 PEEEO 6T5`.
+
+| Branch | What it is | Boot screen |
+|---|---|---|
+| `main` | SLOOP 2.8 with chords on screen. Four tracks, like the original. | 2.8 PEEEO |
+| `six-tracks` | Everything in `main`, plus six tracks and the PROGRESSION visualiser. The build I play on. | 2.8 PEEEO 6T5 |
+| `chords-on-screen`, `six-tracks-upstream`, `progression-upstream` | Clean copies of single features, made on top of SLOOP for pull requests. | |
+
+### Chords on screen (`main` and `six-tracks`)
+
+- On the TRACKS screen, the row of the selected synth track shows the chord you play in place of the engine name, for about two seconds.
+- New visualiser, style 13 CHORDS: the chord name in large letters, its degree in the key of the track (for example IV IN C MAJ), its notes, and a keyboard drawn like the FM-1's own 27 keys (F to G) that follows OCT and TRN.
+- It reads triads, 7ths, 6ths, 9ths, sus chords, dim7 and inversions such as C/E. Notes from the arp count, and so do keys pressed one after another on MONO and LEGATO sounds.
+
+### Six tracks (`six-tracks` only)
+
+- Five synth tracks and the drums. The drums move to track 6 and keep their orange colour. Tracks 4 and 5 are violet and pink, with CLAV and WURLI as their default sounds. The 8 voices are still shared between all tracks.
+- TRACKS and REC keep four rows of the same size and scroll to the selected or armed track.
+- GLO layer: keys 1 to 6 mute, 7 to 12 solo, 13 fill, 14 fill bar, 16 tap. KNOB 1 to 4 set the volume of the four tracks visible on TRACKS.
+- MIDI: channels CH4 and CH5 for tracks 4 and 5 (GLO > MIDI and a new MIDI CH page). The drum channel is labelled DRUM.
+- Projects are saved in a new format (7) that keeps all six tracks in the same flash space by storing only the steps and locks in use. A very dense project shows PROJECT FULL and the slot keeps what it had. Projects from SLOOP load with the drums on track 6 and tracks 4 and 5 empty.
+
+### PROGRESSION visualiser (`six-tracks` only)
+
+- Style 14 PROGRESSION: the last six chords played on the track, each with its degree in the key, and three ideas for the next chord taken from the triads of the track's scale. It needs a seven-note scale on the track.
+
+### Known limits of the six-track builds
+
+- The web editor still expects four tracks. Do not use it with these builds.
+- The per-track visualisers (VU METERS, BOUNCE, ORBIT, WIRES, LCD, SLOOP) show only tracks 1 to 3 and the drums.
+- MIDI LEARN works on tracks 1 to 3 and the drums, not on tracks 4 and 5.
+- Custom themes only cover the four original track colours.
+- Official SLOOP sees projects saved in format 7 as empty slots. Keep a backup before going back.
+
+### Going back to the official SLOOP
+
+Install the official firmware from the [SLOOP installer](https://isod89.github.io/sloop-fm1/) or with M-UPGRADE from M-VAVE. Bugs found in this fork belong here, not in the original project's issues.
+
+Builds of this fork are modified versions of SLOOP, changed in October 2026 and released under the same GPL-3.0 licence. All credit for SLOOP goes to isod89, and for Felucca to Leo Kuroshita / Hügelton Instruments. **Everything below this point is the original SLOOP README**, unchanged.
 
 ---
 
