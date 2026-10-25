@@ -1,17 +1,17 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* Felucca core types: tracks, voices, engines, parameters.
- * Four tracks: tracks 1..3 are synth parts (each its own engine, preset, parameters,
- * voices and 64-step pattern), track 4 is the GM drum part (drums.c; its own voices,
+ * Six tracks: tracks 1..5 are synth parts (each its own engine, preset, parameters,
+ * voices and 64-step pattern), track 6 is the GM drum part (drums.c; its own voices,
  * pattern and the pattern parameters of its track_t). The parts share one budget of
  * NVOICE sounding voices (voice.c). */
 #include <stdint.h>
 #define NVOICE 8                 /* voices per part, and the budget shared by all parts */
 #define NPOLY 8
 #define NPART 5                  /* synth parts: tracks 1..5 (sloop-peeeo: 5, SLOOP 3) */
-#define NTRK 6                   /* + the drum track */
-#define TRK_DRUM 5
-/* sloop-peeeo: what kept a track in 2 bits (projects, MIDI LEARN, the visualiser's four) holds tracks 1..3 and the
+#define NTRK (NPART + 1)          /* synth parts + the drum track */
+#define TRK_DRUM NPART
+/* Legacy projects, the base MIDI LEARN slot and four-track visualisers hold tracks 1..3 and the
  * drums as before (the drums at 3); tracks 4 and 5 have no such slot */
 #define TRK_LEGACY(i) ((uint32_t)(i) == TRK_DRUM ? 3u : (uint32_t)(i) < 3u ? (uint32_t)(i) : 0xFFu)
 #define TRK_FROM_LEGACY(s) ((uint32_t)(s) == 3u ? (uint32_t)TRK_DRUM : (uint32_t)(s))
@@ -104,14 +104,21 @@ enum {                          /* global parameters */
                                  * before), 1 1-16 (any 16 notes in a row: the 16 sounds in order, again each 16; seq.c
                                  * midi_drum_lane; a setting of the FM-1) */
     G_RMCH,                     /* SLOOP 2.7, GLO > MIDI 3: REMOTE, the channel whose CCs 102..115 press the 14 buttons (0 OFF,
-                                 * 1..16; seq.c remote_cc, ui_input.c remote_poll; a setting of the FM-1) */
+                                 * 1..16); CC119 values 0..3 request sections A..D (PEEEO 6T8).
+                                 * seq.c remote_cc, ui_input.c remote_poll; a setting of the FM-1 */
     G_CLKOUT,                   /* SLOOP 2.7, GLO > MIDI 3: CLK OUT, the MIDI clock (24 a beat) and START / STOP out on USB
                                  * while SYNC is INT (seq.c clkout_block; a setting of the FM-1, kept in DR MAP's byte) */
     G_FXFADE,                   /* SLOOP 2.7.2, the FX layer (FX held), SELECT: how fast a punch-in FX fades in and out, 0 (instant, as
                                  * before) .. 15 (punch.c; a setting of the FM-1, kept in BEND's byte) */
     G_CH4, G_CH5,               /* sloop-peeeo, GLO > MIDI: the MIDI channels of synth tracks 4 and 5 (settings of the FM-1) */
+    G_DAW, G_CCTX, G_SPP, G_MLOSS, /* DAW integration: profile, local CC output, Song Position Pointer, clock loss */
     G_COUNT
 };
+enum { DAW_STAND, DAW_LIVE, DAW_CAPTURE };
+enum { MLOSS_RUN, MLOSS_HOLD, MLOSS_STOP };
+
+/* MIDI channels in track order. Global parameter ids stay in their original positions for backups. */
+static const uint8_t TRK_CH[NTRK] = {G_CH1, G_CH2, G_CH3, G_CH4, G_CH5, G_DRCH};
 
 /* ----------------------------------------------------------- voices --- */
 typedef struct {
@@ -340,7 +347,7 @@ typedef struct {
     int32_t batt_raw;            /* smoothed ADC ch3 (battery divider), 0 = not read yet */
 } song_t;
 
-static track_t trk[NTRK];        /* the instrument: three parts and the drum track */
+static track_t trk[NTRK];        /* the instrument: five parts and the drum track */
 static song_t song;
 
 /* The transport clock (seq.c runs it). One unit = one sample at 1 BPM: a beat is BEAT_U units at any

@@ -69,6 +69,14 @@ run "after Felucca 1.4 / 1.5: INSERT, filter TYPE, ENV SYNC, LFO 2, drum mutes, 
 
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/ui_pages_test" tests/ui_pages_test.c -lm
 run "live UI: pages, layers (punch, steps, erase, roll, key, mix), holds, drums, REC, fuzz" "$OUT/ui_pages_test" "$OUT"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/midi_tracks_test" tests/midi_tracks_test.c -lm
+run "six-track MIDI: routing, STOP, channels, learn, UI and legacy backups" "$OUT/midi_tracks_test" "$OUT"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/daw_test" tests/daw_test.c -lm
+run "DAW: local CC automation, profiles, SPP, clock loss and backup migration" "$OUT/daw_test"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/daw_song_test" tests/daw_song_test.c -lm
+run "SPP with real scenes: song continuation and working-loop restoration" "$OUT/daw_song_test"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/live_recall_params_test" tests/live_recall_params_test.c -lm
+run "Live Recall: real presets, edited modes and parameter restore ordering" "$OUT/live_recall_params_test"
 # no divide by 0 (the FM-1 runs with the div0 trap off, hal/fm1_irq.h: a real one would give a wrong value
 # silently): the UI fuzz, the sequencer, the projects and a minute of random live use, with UBSan
 UBSAN="${CC_UB:-cc} -O1 -w -fsanitize=integer-divide-by-zero -fno-sanitize-recover=integer-divide-by-zero -Ibuild/gen -Ifirmware/src -Ifirmware/hal"
@@ -171,7 +179,12 @@ run "installer CLI (fm1_install.py) against a simulated FM-1" python3 tests/inst
 run "the offline editor (one file, nothing next to it); the offline site (sw.js, manifest)" python3 tests/site_test.py
 
 if command -v node >/dev/null 2>&1; then
+    if [ -f 'build/SLOOP Live Integration/SLOOP Live Recall.amxd' ]; then
+        run "Live templates and Max device container" python3 tests/live_bundle_test.py
+        run "Live Recall: snapshot protocol, persistence, auto recall and failure handling" node tests/live_recall_test.mjs
+    fi
     run "web pages: editor protocol, samples, packages, update protocol" node web/test_web.mjs
+    run "six-track editor, LIVE routing, DAW and project files" node web/test_fork.mjs
     rm -rf "$OUT/pwa-site" && python3 web/make_site.py build/felucca.fwsc 2.7 "$OUT/pwa-site" >/dev/null &&
         run "the site without internet in Chromium (skipped without Playwright)" node tests/pwa_test.mjs "$OUT/pwa-site"
 else

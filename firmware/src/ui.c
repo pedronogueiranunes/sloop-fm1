@@ -3,7 +3,7 @@
 /* Felucca user interface. Four columns map to KNOB 1..4. Rendering is lazy:
  * every element remembers what it last drew and is redrawn only on change. */
 #ifndef FELUCCA_VERSION
-#define FELUCCA_VERSION "SLOOP 2.8 PEEEO 6T5"  /* the beat machine firmware for the FM-1 (based on Felucca) */
+#define FELUCCA_VERSION "SLOOP 2.8 PEEEO 6T9"  /* the beat machine firmware for the FM-1 (based on Felucca) */
 #endif
 static void project_save(uint32_t slot);
 static void arrangement_save(void);
@@ -131,7 +131,7 @@ UI_SMALL static void page_entered(void)
 {
     const page_t *pg = cur_page();
     song.seq_mode = !ui.home && pg->fam == FAM_SEQ;
-    if (!ui.home && pg->fam == FAM_GLO && (pg->id[0] == G_CH1 || pg->id[0] == G_CH5) && song.g[G_ROUTE]) {   /* (2.6) GLO > MIDI while MIDI 2 >
+    if (!ui.home && pg->fam == FAM_GLO && midi_page(pg) && song.g[G_ROUTE]) {   /* (2.6) GLO > MIDI while MIDI 2 >
                                                                                    * IN sets the channels aside */
         if (song.g[G_ROUTE] == 1)
             ui_message("IN = CLOCK: NO NOTES");
@@ -152,11 +152,10 @@ UI_SMALL static void page_entered(void)
  * turned, and says whose it was. Every frame (ui_input) */
 UI_SMALL static void midi_chan_fix(void)
 {
-    static const uint8_t ID[NTRK] = {G_CH1, G_CH2, G_CH3, G_CH4, G_CH5, G_DRCH};   /* (sloop-peeeo: the six, by track) */
     static int16_t was[NTRK] = {-1, -1, -1, -1, -1, -1};
     uint32_t k, j;
     for (k = 0; k < NTRK; k++) {
-        int32_t v = song.g[ID[k]], dir, owner = -1;
+        int32_t v = song.g[TRK_CH[k]], dir, owner = -1;
         if (was[k] < 0 || v == was[k] || !v) {
             was[k] = (int16_t)v;
             continue;
@@ -165,7 +164,7 @@ UI_SMALL static void midi_chan_fix(void)
         for (;;) {
             int32_t o = -1;
             for (j = 0; j < NTRK; j++)
-                if (j != k && song.g[ID[j]] == v)
+                if (j != k && song.g[TRK_CH[j]] == v)
                     o = (int32_t)j;
             if (o < 0)
                 break;
@@ -184,12 +183,12 @@ UI_SMALL static void midi_chan_fix(void)
         if (owner >= 0) {
             char b[8], o[12];
             str_cpy(b, "CH ", sizeof b);
-            fmt_int(b + 3, song.g[ID[k]]);
+            fmt_int(b + 3, song.g[TRK_CH[k]]);
             str_cpy(o, owner == (int32_t)TRK_DRUM ? " = DRUMS" : " = TRACK 1", sizeof o);
             if (owner != (int32_t)TRK_DRUM)
                 o[9] = (char)('1' + owner);
             ui_say(b, o);
-            song.g[ID[k]] = (int16_t)v;
+            song.g[TRK_CH[k]] = (int16_t)v;
         }
         was[k] = (int16_t)v;
     }
@@ -1012,29 +1011,28 @@ UI_SMALL static uint32_t ml_code(uint32_t id) { return id >= P_E0 ? ML_E0 + id -
 UI_SMALL static void ml_put(uint32_t i, uint32_t e)       /* (the ISR reads the entry: never half of one) */
 {
     fm1_irq_off();
-    ml_tab[i % ML_N] = (uint16_t)e;
+    ml_tab[i % ML_N] = e;
     fm1_irq_on();
 }
 UI_SMALL static uint32_t ml_count(void)
 {
     uint32_t i, n = 0;
     for (i = 0; i < ML_N; i++)
-        n += (ml_tab[i] >> 9) != 0u;
+        n += ML_CODE(ml_tab[i]) != 0u;
     return n;
 }
 /* cc -> parameter id of track k, in place of what either had; 0 = no room, 2 = a CC that is never learned */
 UI_SMALL static uint32_t ml_learn(uint32_t cc, uint32_t k, uint32_t id)
 {
     uint32_t i, e;
-    if (!ml_free_cc(cc) || k >= NTRK || TRK_LEGACY(k) > 3u || id >= P_COUNT)
-        return 2;                                           /* (sloop-peeeo: tracks 4, 5 cannot learn yet) */
-    k = TRK_LEGACY(k);
+    if (!ml_free_cc(cc) || k >= NTRK || id >= P_COUNT)
+        return 2;
     for (i = 0; i < ML_N; i++)
-        if ((e = ml_tab[i]) >> 9 && ((e & 127u) == cc || ((e >> 9) == ml_code(id) && ((e >> 7) & 3u) == k)))
+        if (ML_CODE(e = ml_tab[i]) && ((e & 127u) == cc || (ML_CODE(e) == ml_code(id) && ml_track(e) == k)))
             ml_put(i, 0);
     for (i = 0; i < ML_N; i++)
-        if (!(ml_tab[i] >> 9)) {
-            ml_put(i, cc | k << 7 | ml_code(id) << 9);
+        if (!ML_CODE(ml_tab[i])) {
+            ml_put(i, ml_entry(cc, k, ml_code(id)));
             return 1;
         }
     return 0;
@@ -1089,7 +1087,7 @@ UI_SMALL static void ml_poll(void)
     cc--;
     r = ml_learn(cc, mlu.trk, mlu.id);
     if (r != 1u) {
-        ui_message(r && TRK_LEGACY(mlu.trk) > 3u ? "LEARN: TRACKS 1-3, DRUMS" : r ? "CC NOT LEARNABLE" : "LEARN FULL");
+        ui_message(r ? "CC NOT LEARNABLE" : "LEARN FULL");
         return;
     }
     str_cpy(a, "CC", 4);

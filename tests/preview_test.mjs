@@ -12,7 +12,7 @@ const E = vm.runInNewContext(proto + ';({makeMockDevice, previewSnapshot, previe
   { setTimeout, clearTimeout, setInterval, clearInterval, console, TextEncoder, TextDecoder, Blob, Response, DecompressionStream });
 const module = await WebAssembly.compile(readFileSync('build/preview/sloop-preview.wasm'));
 assert.equal(WebAssembly.Module.imports(module).length, 0, 'DSP must have no hardware or runtime imports');
-function device(options = {}) { return E.makeMockDevice({ auto: false, ...options }); }
+function device(options = {}) { return E.makeMockDevice({ ntrk: 6, auto: false, ...options }); }
 function render(dsp, frames = 8192) {
   const l = new Float32Array(frames), r = new Float32Array(frames);
   dsp.render(l, r);
@@ -74,9 +74,9 @@ for (let engine = 0; engine < 12; engine++) {
   const m = device({onChange: () => { changes++; dsp.sync(E.previewSnapshot(m.state)); }});
   const dsp = new FirmwareAudio(module); dsp.sync(E.previewSnapshot(m.state));
   dsp.w.preview_play(1); const before = render(dsp, 44160);
-  for (let i = 0; i < 4; i++) await request(m, E.req.trackMix(i, 100, 1));
+  for (let i = 0; i < m.state.tracks.length; i++) await request(m, E.req.trackMix(i, 100, 1));
   render(dsp, 44160 * 3);
-  assert.equal(changes, 4);
+  assert.equal(changes, m.state.tracks.length);
   assert(render(dsp, 44160).energy < before.energy * 0.01, 'editor protocol edits must reach the audible mixer');
   m.stop(); console.log('editor protocol -> audio thread live edits: passed');
 }
@@ -85,10 +85,10 @@ for (let engine = 0; engine < 12; engine++) {
   const m = device(), dsp = new FirmwareAudio(module);
   const state = E.previewSnapshot(m.state);
   state.g[0] = 120; state.g[1] = 0;
-  const lengths = [16, 7, 32, 5], divisions = [2, 1, 3, 2], denominators = [4, 2, 8, 4];
+  const lengths = [16, 7, 32, 12, 9, 5], divisions = [2, 1, 3, 0, 4, 2], denominators = [4, 2, 8, 1, 3, 4];
   state.tracks.forEach((t, k) => { t.p[29] = lengths[k]; t.p[30] = divisions[k]; t.p[31] = 0; t.micro.fill(0); });
   dsp.sync(state);
-  assert.deepEqual(dsp.transport().positions, [-1, -1, -1, -1]);
+  assert.deepEqual(dsp.transport().positions, Array.from(state.tracks, () => -1));
   assert.equal(dsp.w.preview_position(99), -1);
   dsp.w.preview_play(1);
   let reachedSecondPage = false;
@@ -101,9 +101,9 @@ for (let engine = 0; engine < 12; engine++) {
   }
   assert(reachedSecondPage, 'long patterns must reach their second page');
   dsp.w.preview_panic(); render(dsp, dsp.frames);
-  assert.deepEqual(dsp.transport().positions, [-1, -1, -1, -1], 'stopped transport has no active steps');
+  assert.deepEqual(dsp.transport().positions, Array.from(state.tracks, () => -1), 'stopped transport has no active steps');
   dsp.w.preview_play(1); render(dsp, dsp.frames);
-  assert.deepEqual(dsp.transport().positions, [0, 0, 0, 0], 'restart begins at the first step');
+  assert.deepEqual(dsp.transport().positions, Array.from(state.tracks, () => 0), 'restart begins at the first step');
   dsp.w.preview_panic(); render(dsp, dsp.frames);
   const nudged = structuredClone(state);
   nudged.tracks[0].micro[0] = 16; dsp.sync(nudged);
@@ -126,7 +126,7 @@ for (let engine = 0; engine < 12; engine++) {
   assert.equal(m.state.tracks[1].step[0].notes[0], 67);
   assert.equal(JSON.stringify(m.state.tracks[0].step), original);
   // Isolate the edited track: a new note must be audible, then removed through the same protocol.
-  for (const k of [0, 2, 3]) await request(m, E.req.trackMix(k, 100, 1));
+  for (const k of Array.from({length:m.state.tracks.length},(_,i)=>i).filter(i=>i!==1)) await request(m, E.req.trackMix(k, 100, 1));
   dsp.w.preview_play(1); assert(render(dsp, 44160).energy > 0.01, 'inline note sounds in the loop');
   await request(m, E.req.trackStep(1, 0, E.previewToggleStep(m.state.tracks[1].step[0], 67)));
   dsp.w.preview_panic(); render(dsp, 44160 * 4); dsp.w.preview_play(1);
@@ -153,13 +153,21 @@ for (let engine = 0; engine < 12; engine++) {
   const dr = {on: (1 << 2) | (1 << 4), lvl: new Array(16).fill(0), rat: new Array(16).fill(0)};
   dr.lvl[2] = 3; dr.rat[2] = 2; dr.lvl[4] = 1;
   await request(m, E.req.drumStep(0, dr));
-  const before = JSON.stringify(m.state.tracks[3].dstep[0]);
-  await request(m, E.req.drumStep(0, E.previewToggleDrum(m.state.tracks[3].dstep[0], 0)));
-  const after = m.state.tracks[3].dstep[0];
+  const before = JSON.stringify(m.state.tracks[m.state.tracks.length - 1].dstep[0]);
+  await request(m, E.req.drumStep(0, E.previewToggleDrum(m.state.tracks[m.state.tracks.length - 1].dstep[0], 0)));
+  const after = m.state.tracks[m.state.tracks.length - 1].dstep[0];
   assert(after.on & 1); assert.equal(after.lvl[2], 3); assert.equal(after.rat[2], 2); assert.equal(after.lvl[4], 1);
   await request(m, E.req.drumStep(0, E.previewToggleDrum(after, 0)));
-  assert.equal(JSON.stringify(m.state.tracks[3].dstep[0]), before, 'two drum clicks restore the same step');
+  assert.equal(JSON.stringify(m.state.tracks[m.state.tracks.length - 1].dstep[0]), before, 'two drum clicks restore the same step');
   assert.equal(m.state.sel, 0);
   m.stop(); console.log('inline edits: add/remove audible notes, independent tracks, and preserved drum lanes passed');
 }
 console.log('preview audio tests passed');
+
+{
+  const m=device({ntrk:4}), dsp=new FirmwareAudio(module);
+  dsp.sync(E.previewSnapshot(m.state));
+  assert.equal(dsp.physical(3),5,'old drum track maps to the compiled last track');
+  assert.equal(dsp.transport().positions.length,4);
+  m.stop(); console.log('four-track preview compatibility: passed');
+}

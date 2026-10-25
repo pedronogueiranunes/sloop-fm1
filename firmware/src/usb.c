@@ -821,6 +821,14 @@ static void midi_in_event(uint32_t pkt)
         }
         return;
     }
+    if (cin == 3u && st == 0xF2u && !((pkt >> 16) & 0x80u) && !(pkt & 0x80000000u)) {
+        if (mi_w - mi_r < MQ) {
+            midi_in_q[mi_w % MQ] = pkt & ~0xF0u;   /* SPP: three-byte system common message, USB source */
+            RING_PUBLISH();
+            mi_w++;
+        }
+        return;
+    }
     if (cin >= 8u && cin <= 0xEu && (st >> 4) == cin && !((pkt >> 16) & 0x80u) &&
         (cin == 0xCu || cin == 0xDu || !(pkt & 0x80000000u))) {
         if (mi_w - mi_r < MQ) {

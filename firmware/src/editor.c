@@ -525,7 +525,7 @@ UI_SMALL static uint32_t ed_bk_commit(void)
         persist_t p;
         if (ed_flash_busy())
             return 3;
-        if (n != MIDI_PART && n != 2u * ML_N && n != 2u * ML_N + 4u)
+        if (!midi_part_size(n))
             return 2;
         midi_part_read(raw, n);                           /* (every entry and channel checked) */
         persist_fill(&p);
@@ -980,7 +980,7 @@ UI_SMALL static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes b
             ed_b(trk[i].p[P_MUTE] != 0);
             ed_b((song.rec >> i) & 1u);
         }
-        ed_b(song.solo & 15u);                            /* v5: the tracks soloed */
+        ed_b(song.solo & ((1u << NTRK) - 1u));                            /* v5: the tracks soloed */
         break;
     case ED_TRACK_MIX: {                                   /* track [, level v14, mute] -> track, level, mute */
         track_t *t;

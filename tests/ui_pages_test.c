@@ -58,7 +58,12 @@ static void project_save(uint32_t i) { (void)i; saves++; ui_message("SAVED"); }
 static void project_load(uint32_t i) { (void)i; loads++; }
 static void project_erase(uint32_t i) { (void)i; erases++; ui_message("ERASED"); }
 static void arrangement_save(void) {}
-static uint32_t arrangement_ready(void) { return 3; }
+static uint8_t section_cancel_on_check;              /* emulate a STOP arriving while a MIDI request is validated */
+static uint32_t arrangement_ready(void)
+{
+    if (section_cancel_on_check) { section_cancel_on_check = 0; seq_stop(); }
+    return 3;
+}
 static void arrangement_apply(uint32_t s) { (void)s; }
 static uint32_t section_bars(uint32_t s) { return s == 1u ? 2u : 1u; }   /* (B: two bars) */
 static void song_backup(void) {}
@@ -862,7 +867,7 @@ int main(int argc, char **argv)
             open_family(FAM_SEQ); frame();            /* (round to STEP again: SEQ opens there, as before) */
             go_home(); frame();
             open_family(FAM_GLO); frame();
-            (void)page_pos(&n);                       /* GLO: its ten pages (sloop-peeeo: MIDI CH) */
+            (void)page_pos(&n);                       /* GLO: ten pages, the six channels on one scrolling page */
             go_home(); frame();
             ui.menu = (uint8_t)menu0, ui.menu_sel = (uint8_t)sel0, ui.force = 1; frame();
             ok &= k1 == 1u && n1 == 2u && k2 == 2u && n2 == 2u && k3 == 3u && n3 == 3u && n == 10u;
@@ -1825,15 +1830,15 @@ int main(int argc, char **argv)
                 frames(16);
             }
             {   /* 2.6: every MIDI setting in MIDI and MIDI 2; no channel on two tracks */
-                const page_t *m = cur_page(), *mc = &PAGES[ui.page + 1u], *m2 = &PAGES[ui.page + 2u];
+                const page_t *m = cur_page(), *m2 = &PAGES[ui.page + 1u];
                 const char *u;
                 char vv[12];
                 param_format(&GP[G_DRCH], 0, vv, &u);
                 check(m->id[0] == G_CH1 && m->id[1] == G_CH2 && m->id[2] == G_CH3 && m->id[3] == G_CH4 &&
-                      !strcmp(mc->title, "MIDI CH") && mc->id[0] == G_CH5 && mc->id[1] == G_DRCH && !strcmp(m2->title, "MIDI 2") &&
+                      !strcmp(m2->title, "MIDI 2") &&
                       m2->id[0] == G_ROUTE && m2->id[1] == G_CHOTH && m2->id[2] == G_MIDI && m2->id[3] == G_BEND &&
                       !strcmp(GP[G_DRCH].label, "DRUM") && !strcmp(vv, "OFF"),
-                      "GLO > MIDI (six tracks): CH1 CH2 CH3 CH4; MIDI CH: CH5 DRUM; MIDI 2: IN OTHER OUT BEND; DRUM 0 reads OFF");
+                      "GLO > MIDI: scrolling channels; MIDI 2: IN OTHER OUT BEND; DRUM 0 reads OFF");
                 song.g[G_CH2] = 2, frame();
                 K(EN_K2, 1);                              /* CH2 2 -> 3: track 3's, 4 and 5 tracks 4 and 5's: on to 6 */
                 check(song.g[G_CH2] == 6 && !strcmp(ui.msg, "CH 3 = TRACK 3"), "GLO > MIDI: CH2 turned onto track 3's channel: past tracks 4, 5's to 6, \"CH 3 = TRACK 3\"");
@@ -1973,9 +1978,13 @@ int main(int argc, char **argv)
         song.playing = 0; transport_req = 0; song.rec = 0; rec_wait = 0; arrangement_enabled = 0; live_req = -1;
         live(0, 0, 0, 0);
         bpm = (int)(lv_out[3] | lv_out[4] << 7) - 8192;
-        ok &= lv_n == 50u && lv_out[0] == 0 && !(lv_out[1] & 1u) && bpm == song.g[G_BPM] && lv_out[12] == song.sel && lv_out[32] == 0u
-              && lv_out[34] == (8u | 4u << 4);
-        check(ok, "LIVE (2.7): the state, 50 bytes (flags, BPM, sections, mix, punch, song, 4 x step / length / meter, master, throws, drum tune / decay)");
+        ok &= lv_n == 38u + 3u * NTRK && lv_out[0] == 0 && !(lv_out[1] & 1u) && bpm == song.g[G_BPM] && lv_out[12] == song.sel && lv_out[20u + 3u * NTRK] == 0u
+              && lv_out[22u + 3u * NTRK] == (8u | 4u << 4);
+        check(ok, "LIVE (2.7): the state, all tracks (flags, BPM, sections, mix, punch, song, master, throws, drum tune / decay)");
+        song.solo = song.rec = (uint8_t)((1u << (NPART - 1u)) | (1u << TRK_DRUM));
+        live(0, 0, 0, 0);
+        check(lv_out[10] == song.solo && lv_out[11] == song.rec, "LIVE: synth 5 and drum solo/record bits reach the editor");
+        song.solo = song.rec = 0;
         live(1, 1, 0, 0); ok = transport_req == 1u; frames(30);
         live(0, 0, 0, 0); ok &= song.playing && (lv_out[1] & 1u) && lv_out[20] < trk_len(&trk[0]) && lv_out[21] == trk_len(&trk[0]);
         check(ok, "LIVE: PLAY plays; the reply says so");
@@ -1983,13 +1992,13 @@ int main(int argc, char **argv)
         ok = trk[0].p[P_MUTE] && (lv_out[9] & 1u);
         live(2, LY_MIX, 0, 1); live(2, LY_MIX, 0, 0);
         ok &= !trk[0].p[P_MUTE];
-        live(2, LY_MIX, 5, 1); live(2, LY_MIX, 5, 0);
+        live(2, LY_MIX, NTRK + 1, 1); live(2, LY_MIX, NTRK + 1, 0);
         ok &= song.solo == 2u;
-        live(2, LY_MIX, 5, 1); live(2, LY_MIX, 5, 0);
+        live(2, LY_MIX, NTRK + 1, 1); live(2, LY_MIX, NTRK + 1, 0);
         ok &= !song.solo;
-        live(2, LY_MIX, 8, 1); ok &= fill_held == 1u; live(2, LY_MIX, 8, 0); ok &= !fill_held;
-        live(2, LY_MIX, 9, 1); ok &= fill_arm == 1u && (lv_out[1] & 32u) != 0u;
-        live(2, LY_MIX, 9, 1); ok &= !fill_arm;
+        live(2, LY_MIX, MIX_FILL, 1); ok &= fill_held == 1u; live(2, LY_MIX, MIX_FILL, 0); ok &= !fill_held;
+        live(2, LY_MIX, MIX_BAR, 1); ok &= fill_arm == 1u && (lv_out[1] & 32u) != 0u;
+        live(2, LY_MIX, MIX_BAR, 1); ok &= !fill_arm;
         check(ok, "LIVE: GLO keys: mute, solo, fill while held, fill next bar (as GLO + key)");
         live(2, LY_SONG, 1, 1); live(2, LY_SONG, 1, 0);
         ok = live_req == 1 && chain_n == 0u && lv_out[6] == 2u;
@@ -2012,11 +2021,11 @@ int main(int argc, char **argv)
         check(ok, "LIVE: a free take shows; REC closes it, as the REC button (not only PLAY)");
         {   /* (2.7) the page's own: THROW, master, a drum sound's TUNE / DECAY, the pattern, ERASE, ROLL, a chain */
             uint32_t i, len0, any = 0, r, on = 0;
-            live(10, 3, 0, 0); ok = thr_ed == 3u && lv_out[33] == 3u;
+            live(10, 3, 0, 0); ok = thr_ed == 3u && lv_out[21u + 3u * NTRK] == 3u;
             live(10, 0, 0, 0); ok &= thr_ed == 0u;
-            live(11, 63, 0, 0); ok &= ed_master == 64u && lv_out[32] == 64u && ed_master_k == 0xFFFFu;
+            live(11, 63, 0, 0); ok &= ed_master == 64u && lv_out[20u + 3u * NTRK] == 64u && ed_master_k == 0xFFFFu;
             live(11, 127, 0, 0); ok &= ed_master == 0u;
-            live(12, 2, 11, 2); ok &= drum_tune[2] == 3 && drum_dec[2] == -2 && lv_out[36] == (11u | 2u << 4);
+            live(12, 2, 11, 2); ok &= drum_tune[2] == 3 && drum_dec[2] == -2 && lv_out[24u + 3u * NTRK] == (11u | 2u << 4);
             live(12, 2, 8, 4); ok &= !drum_tune[2] && !drum_dec[2];
             check(ok, "LIVE: THROW (as FX + OCT), the master level (the knob takes it back), a drum sound's TUNE / DECAY");
             len0 = trk_len(&trk[0]);

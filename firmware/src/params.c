@@ -37,6 +37,8 @@ static const char *const N_IRATE[] = {"689", "919", "1.1k", "1.4k", "1.8k", "2.2
                                       "7.4k", "8.8k", "11k", "15k", "22k", "44k", 0};
 static const char *const N_AMODE[] = {"OFF", "UP", "DN", "UPDN", "RND", "ORD",   /* (append-only: seq.c AM_*) */
                                        "REPEAT", "DNUP", "UP+8", "CONV", "DIVG", "PINKY", "THUMB", "WALK", "CHORD"};
+static const char *const N_DAW[] = {"STAND", "DAW", "CAPT"};
+static const char *const N_MLOSS[] = {"RUN", "HOLD", "STOP"};
 static const char *const N_MOUT[] = {"KEYS", "SEQ"};
 static const char *const N_MIN[] = {"NOTES", "CLOCK", "CH 1", "CH 2", "CH 3", "CH 4", "CH 5", "CH 6", "CH 7", "CH 8", "CH 9",
                                      "CH 10", "CH 11", "CH 12", "CH 13", "CH 14", "CH 15", "CH 16"};  /* G_ROUTE: MIDI in, notes and clock, the clock only, or (2.6) one channel only, on the selected track (seq.c) */    /* G_MIDI: what goes to MIDI OUT (seq.c seq_out_on) */
@@ -205,6 +207,10 @@ static const param_desc_t GP[G_COUNT] = {
     [G_CLKOUT] = PE("CLOCK", N_CLKOUT, 0),       /* 2.7, GLO > MIDI 3: MIDI clock and START / STOP out on USB (seq.c) */
     [G_RMCH] = PE("REMOTE", N_MCH, 0),           /* 2.7, GLO > MIDI 3: the buttons over MIDI (CC 102..115, seq.c remote_cc) */        /* 2.7, GLO > MIDI 3: MIDI notes -> drum sounds (seq.c midi_drum_lane) */            /* 2.7, GLO > MIDI 3: the punch-in FX's channel (seq.c midi_fx) */
     [G_BEND] = PD("BEND", F_SEMI, 1, 12, 2),      /* 2.6, GLO > MIDI 2: MIDI pitch bend's range (a setting of the FM-1) */
+    [G_DAW] = PE("MODE", N_DAW, DAW_STAND),
+    [G_CCTX] = PE("CCOUT", N_ONOFF, 0),
+    [G_SPP] = PE("SPP", N_ONOFF, 1),
+    [G_MLOSS] = PE("LOST", N_MLOSS, MLOSS_RUN),
     [G_FXFADE] = PD("FADE", F_INT, 0, 15, 0),     /* 2.7.2: the punch-in FX fade (FX layer SELECT), 0 off .. 15 (punch.c) */
 };
 
@@ -421,12 +427,12 @@ static const page_t PAGES[] = {
     {"MASTER", FAM_GLO, SC_GLOBAL, GR_NONE, {G_DUST, G_DUCK, G_FILT, G_ROLL}},
     {"SYSTEM", FAM_GLO, SC_GLOBAL, GR_NONE, {G_MIDI, G_SYNC, G_ROUTE, G_INFO}},
     {"DRUMS", FAM_GLO, SC_GLOBAL, GR_NONE, {G_DRCH, G_DRLVL, G_DRREV, G_DRDLY}},   /* GM kit on MIDI ch 10 */
-    {"MIDI", FAM_GLO, SC_GLOBAL, GR_NONE, {G_CH1, G_CH2, G_CH3, G_CH4}},   /* 2.6: each track's channel (sloop-peeeo: 1..4, */
-    {"MIDI CH", FAM_GLO, SC_GLOBAL, GR_NONE, {G_CH5, G_DRCH, 0xFF, 0xFF}},   /* then 5 and the drums') */
+    {"MIDI", FAM_GLO, SC_GLOBAL, GR_NONE, {G_CH1, G_CH2, G_CH3, G_CH4}},   /* four visible channels; page_id follows the selected track */
     {"MIDI 2", FAM_GLO, SC_GLOBAL, GR_NONE, {G_ROUTE, G_CHOTH, G_MIDI, G_BEND}},   /* 2.6: IN, OTHER, OUT, BEND: every MIDI
                                                                            * setting in these two pages (IN and OUT on
                                                                            * SYSTEM too, the drums' channel on DRUMS) */
     {"MIDI 3", FAM_GLO, SC_GLOBAL, GR_NONE, {G_FXCH, G_DRMAP, G_RMCH, G_CLKOUT}},   /* 2.7: the punch-in FX over MIDI */
+    {"DAW", FAM_GLO, SC_GLOBAL, GR_NONE, {G_DAW, G_CCTX, G_SPP, G_MLOSS}},
     {"TEXTURE", FAM_GLO, SC_GLOBAL, GR_NONE, {G_TXSRC, G_TXLVL, G_TXTONE, G_TXMOVE}},   /* 2.6: the bed under the mix */
     {"TEXTURE 2", FAM_GLO, SC_GLOBAL, GR_NONE, {G_TXRATE, G_TXWHEN, G_TXDUCK, 0xFF}},
     {"PRESETS", FAM_SAVE, SC_GLOBAL, GR_BROWSE, {0xFF, 0xFF, 0xFF, 0xFF}},   /* browser: PRESETS knob / KNOB 1 */
@@ -464,9 +470,25 @@ static int page_shown(const page_t *pg)
     return pg->id[0] != P_FTYPE || (!is_drum(TSEL) && TSEL->eng_req % NENGINES == 0u);
 }
 
+static uint8_t trk_top;
+static uint32_t trk_view_top(void)
+{
+    if (song.sel < trk_top)
+        trk_top = song.sel;
+    else if (song.sel >= trk_top + 4u)
+        trk_top = (uint8_t)(song.sel - 3u);
+    if (trk_top > NTRK - 4u)
+        trk_top = NTRK - 4u;
+    return trk_top;
+}
+static int midi_page(const page_t *pg) { return pg->scope == SC_GLOBAL && pg->id[0] == G_CH1; }
+static uint32_t page_id(const page_t *pg, uint32_t slot)
+{
+    return midi_page(pg) ? TRK_CH[trk_view_top() + slot] : pg->id[slot];
+}
 static const param_desc_t *page_desc(const page_t *pg, uint32_t slot, int16_t **valp)
 {
-    uint32_t id = pg->id[slot];
+    uint32_t id = page_id(pg, slot);
     if (id == 0xFFu || (is_drum(TSEL) && (!page_for_drum(pg) || (pg->scope == SC_GLOBAL && id == G_INITSND)))) {
         *valp = 0;
         return 0;

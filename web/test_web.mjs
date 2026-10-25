@@ -1113,6 +1113,21 @@ async function editorDsyn() {
   await E.backupRestore(rq, JSON.parse(JSON.stringify(M)));
   ok(M.objects.some((x) => x.id === 10 && x.len === 40) && !N.objects.some((x) => x.id === 10) && m.state.ml[0] === 21 && m.state.ml[1] === ml[1]
     && m.state.ml[33] === 11, "midi learn: a backup holds the learned CCs and GLO > MIDI (object 10, only when not the default); a restore puts them back");
+  {   /* Six-track MIDI settings: raw backup bytes include CH4/5 and the extra learned track bits. */
+    for (const size of [42, 44, 45]) {
+      const six = new Uint8Array(size);
+      six.set(ml); six[40] = 4; six[41] = 5;
+      if (size >= 44) six[42] = 3;
+      if (size === 45) six[44] = 45;
+      m.state.ml = six;
+      const saved = await E.backupCapture(rq, info);
+      m.state.ml = new Uint8Array(40);
+      await E.backupRestore(rq, JSON.parse(JSON.stringify(saved)));
+      ok(eq(m.state.ml, six), `backup: ${size}-byte six-track MIDI settings restored byte for byte`);
+    }
+    ok(E.bkDevFormat({ ntrk: 6, pcount: 71 }) === 7 && E.bkDevFormat({ ntrk: 4, pcount: 71 }) === 6,
+      "backup: six-track devices accept FUN7; four-track devices still stop at FUN6");
+  }
   {   /* 2.6: a 2.6 backup without object 10 (the defaults then): restored as the defaults, not left as they are now */
     const N1 = JSON.parse(JSON.stringify(N));
     N1.firmware = "SLOOP 2.6";

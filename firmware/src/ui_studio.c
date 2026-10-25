@@ -9,17 +9,6 @@
 #include "chord.c"                                /* sloop-peeeo: the notes and chord a synth track plays */
 /* sloop-peeeo: six tracks, four rows on TRACKS: the first one in view, moved so the selected track is always in it.
  * The GLO layer's KNOB 1..4 are the levels of these four (ui_layers.c) */
-static uint8_t trk_top;
-UI_SMALL static uint32_t trk_view_top(void)
-{
-    if (song.sel < trk_top)
-        trk_top = song.sel;
-    else if (song.sel >= trk_top + 4u)
-        trk_top = (uint8_t)(song.sel - 3u);
-    if (trk_top > NTRK - 4u)
-        trk_top = NTRK - 4u;
-    return trk_top;
-}
 static uint8_t drum_page, drum_cursor;   /* drum_page: 0 GRID, 1 KIT, 2 SOUND (2.7: a sound's TUNE, DECAY) */
 #define drum_lane pen_lane                 /* (2.7.1) one drum sound picked everywhere: the GRID, SOUND, the SEQ layer, a pad
                                             * played (seq.c pen_lane) */
@@ -161,6 +150,7 @@ UI_SMALL static void studio_open(uint32_t scope)
  * REC again stops recording / cancels the arm (playback continues). */
 UI_SMALL static void rec_toggle(void)
 {
+    if (song.g[G_DAW] == DAW_LIVE) { ui_message("RECORD IN THE DAW"); return; }
     if (ft_owns_press())
         return;
     if (song.playing && arrangement_enabled) {
@@ -344,6 +334,49 @@ UI_SMALL static void studio_tracks_draw(void)
         ratio[3] = (t->p[P_PAN] + 64) * 1000 / 127;
         te_dials(184, lab, val, ratio, song.sel, &footer);
     }
+}
+
+/* GLO > MIDI: the same four-row window and ALGORITHM track selection as TRACKS.
+ * KNOB 1..4 edit the channels of the four visible tracks. */
+UI_SMALL static void studio_midi_draw(void)
+{
+    static uint32_t head, rows[NTRK], bar, footer;
+    uint32_t top = trk_view_top(), i;
+    char values[4][8], labels[4][8];
+    const char *val[4], *lab[4];
+    int32_t ratio[4];
+    te_header("midi", TE_G3, &head, -1);
+    if (ui.force || bar != top + 1u) {
+        bar = top + 1u;
+        memset(rows, 0, sizeof rows);
+        cv_begin(2, 144, C_BLACK);
+        cv_rect(0, 0, 2, 144, TE_G1);
+        cv_rect(0, (int32_t)top * 144 / NTRK, 2, 4 * 144 / NTRK, TE_G3);
+        cv_blit(238, 40);
+    }
+    for (i = top; i < top + 4u; i++) {
+        uint32_t row = i - top, selected = song.sel == i, ch = (uint32_t)song.g[TRK_CH[i]];
+        uint32_t sig = 1u + ch + selected * 32u;
+        uint16_t col = trk_col(i);
+        const char *unit;
+        param_format(&GP[TRK_CH[i]], (int32_t)ch, values[row], &unit);
+        str_cpy(labels[row], "trk ", sizeof labels[row]);
+        fmt_int(labels[row] + 4, (int32_t)i + 1);
+        lab[row] = labels[row];
+        val[row] = values[row];
+        ratio[row] = (int32_t)ch * 1000 / 16;
+        if (!ui.force && rows[i] == sig)
+            continue;
+        rows[i] = sig;
+        cv_begin(236, 36, C_BLACK);
+        cv_rect(2, 3, 26, 30, selected ? col : trk_dim(i));
+        { char n[2] = {(char)('1' + i), 0}; cv_text(11, 10, &FONT_S, n, selected ? C_BLACK : col); }
+        cv_text(38, 10, &FONT_S, i == TRK_DRUM ? "drums" : "synth", selected ? C_WHITE : TE_G4);
+        cv_text(150, 10, &FONT_S, ch ? "ch" : "", TE_G3);
+        cv_text(180, 10, &FONT_S, values[row], selected ? col : TE_G4);
+        cv_blit(0, 40 + row * 36);
+    }
+    te_dials(184, lab, val, ratio, song.sel, &footer);
 }
 
 /* ---------------------------------------------------------------- DRUMS --- */
@@ -761,12 +794,20 @@ UI_SMALL static void drum_screen_input(uint32_t pressed, uint32_t home, uint32_t
                         audition_lane(drum_lane);
                 }
             }
-            if (k == 3) song.g[G_DRLVL] = (int16_t)clamp(song.g[G_DRLVL] + s, 0, 127);
+            if (k == 3) {
+                int32_t old = song.g[G_DRLVL];
+                song.g[G_DRLVL] = (int16_t)clamp(old + s, 0, 127);
+                midi_cc_global(G_DRLVL, old, song.g[G_DRLVL]);
+            }
         } else {
             if (k == 0) TDRUM->p[P_E0] = (int16_t)clamp(TDRUM->p[P_E0] + s, 0, DRUM_KITS - 1);
-            if (k == 1) song.g[G_DRLVL] = (int16_t)clamp(song.g[G_DRLVL] + s, 0, 127);
-            if (k == 2) song.g[G_DRREV] = (int16_t)clamp(song.g[G_DRREV] + s, 0, 127);
-            if (k == 3) TDRUM->p[P_PAN] = (int16_t)clamp(TDRUM->p[P_PAN] + s, -64, 63);
+            if (k >= 1u) {
+                uint32_t id = k == 1u ? P_LEVEL : k == 2u ? P_REV : P_PAN;
+                int16_t *vp = k == 1u ? &song.g[G_DRLVL] : k == 2u ? &song.g[G_DRREV] : &TDRUM->p[P_PAN];
+                int32_t old = *vp;
+                *vp = (int16_t)clamp(old + s, k == 3u ? -64 : 0, k == 3u ? 63 : 127);
+                midi_cc_local(TDRUM, id, old, *vp);
+            }
         }
     }
 }

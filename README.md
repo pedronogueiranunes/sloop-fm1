@@ -37,7 +37,9 @@ Based on **SLOOP 2.8**. The 2.8.1 update from the original project is not merged
 - Five synth tracks and the drums. The drums move to track 6 and keep their orange colour. Tracks 4 and 5 are violet and pink, with CLAV and WURLI as their default sounds. The 8 voices are still shared between all tracks.
 - TRACKS and REC keep four rows of the same size and scroll to the selected or armed track.
 - GLO layer: keys 1 to 6 mute, 7 to 12 solo, 13 fill, 14 fill bar, 16 tap. KNOB 1 to 4 set the volume of the four tracks visible on TRACKS.
-- MIDI: channels CH4 and CH5 for tracks 4 and 5 (GLO > MIDI and a new MIDI CH page). The drum channel is labelled DRUM.
+- MIDI: all six channels in one scrolling GLO > MIDI list (ALGORITHM selects the track; KNOB 1 to 4 edit the visible rows). Defaults: 1, 2, 3, 4, 5, 10. MIDI LEARN works on all six tracks; older backups migrate their channels and learned drum controls.
+- Live integration (6T9): local knob CC automation, DAW/CAPT profiles, Song Position Pointer, clock-loss behavior and bar-quantized section commands. Includes six-track Live templates and a Max for Live sound-recall device. See [Ableton Live setup](docs/live-integration.md) and the [companion bundle guide](integrations/ableton/README.md).
+- Web editor: six-track LIVE/mixer/preview, MIDI and DAW settings, named project export/import, and Mac/Windows launchers. See the [editor guide](docs/web-editor-fork.md).
 - Projects are saved in a new format (7) that keeps all six tracks in the same flash space by storing only the steps and locks in use. A very dense project shows PROJECT FULL and the slot keeps what it had. Projects from SLOOP load with the drums on track 6 and tracks 4 and 5 empty.
 
 ### PROGRESSION visualiser (`six-tracks` only)

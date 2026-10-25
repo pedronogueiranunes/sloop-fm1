@@ -48,6 +48,20 @@ static int arr_begin(arr_clock_t *r, const arr_config_t *c, uint32_t ready)
     r->running = 1;
     return c->entry[0].scene;
 }
+static int arr_locate(arr_clock_t *r, const arr_config_t *c, uint32_t ready, uint32_t spp, uint32_t sample_rate)
+{
+    uint32_t i, bar = spp / 16u, total = 0;
+    r->error = (uint8_t)!arr_valid(c, ready);
+    if (r->error) { r->running = 0; return ARR_INVALID; }
+    for (i = 0; i < c->count; i++) total += c->entry[i].bars;
+    if (c->loop) bar %= total;
+    else if (bar >= total) { r->running = 0; return ARR_DONE; }
+    for (i = 0; bar >= c->entry[i].bars; i++) bar -= c->entry[i].bars;
+    r->index = (uint8_t)i; r->bar = (uint8_t)bar;
+    r->phase = (spp % 16u) * (sample_rate * 15u);
+    r->running = 1;
+    return c->entry[i].scene;
+}
 static int arr_next(arr_clock_t *r, const arr_config_t *c, uint32_t sample_rate)
 {
     int result = ARR_NONE;

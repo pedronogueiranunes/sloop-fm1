@@ -7,7 +7,7 @@ protocol v3; commands 31-32 (any track's parameters) form protocol v4; command 3
 (SLOOP 2.3); commands 37-40 (the steps' nudges and parameter locks) form protocol v7, commands 41-42 (the
 steps' fill conditions) protocol v8 and commands 68-71 (the FM6 engine's patches) protocol v9 (all SLOOP 2.4).
 
-**v3 (four tracks):** the device has four tracks: 1..3 are synth parts, 4 is the drum track. One
+**v3 (upstream four tracks):** the upstream device has four tracks: 1..3 are synth parts, 4 is the drum track. The PEEEO fork reports six tracks: 1..5 synths and 6 drums. Use INFO.NTRK and the final track for drums. One
 of them is *selected* (the TRACKS page on the device, or `TRACK`). Every v1 / v2 command acts on the
 selected track (its parameters, engine, preset, steps, the user presets it stores or loads); `TRACK`,
 `TRACK_MIX`, `TRACK_DUMP` and `TRACK_STEP` reach any track. Command numbers 1-26 are unchanged.
@@ -486,3 +486,43 @@ before 2.7 does not answer `LIVE`: the page keeps its mixer and keys (TRACK_MIX,
   Felucca's own storage; never the app or the update area. Since SLOOP 2.4 every one of them, and
   `BK_PUT` of a preset bank, answers rc 3 while the song plays (as the panel refuses to save then): a
   flash erase silences the audio for about 50 ms.
+
+### Six-track MIDI backup extension
+
+Backup object 10 accepts 32, 36 and 40 bytes from older SLOOP, the existing
+42-byte six-track block, and the new 44-byte block. The first 40 bytes retain
+their meanings. Bytes 40 and 41 hold synth tracks 4 and 5 channels (0 OFF,
+1..16); the drum channel remains in byte 35 bits 0..4 and now routes track 6.
+An older block defaults the new channels to 4 and 5, advancing to a free channel
+when an old assignment already occupies one. Old assignments are preserved first.
+
+The 16 learned entries retain their two low bytes at offsets 0..31. Bytes 42
+and 43 supply an extra track bit for entries 0..7 and 8..15 (low bit first).
+Without it, slots 0, 1, 2 and 3 mean synths 1, 2, 3 and drums, as before.
+With it, slots 0 and 1 mean synths 4 and 5. Invalid entries are discarded.
+MIDI LEARN retains its existing behavior: a learned CC targets its assigned
+track independently of the incoming channel, subject to the IN filter.
+
+INFO reporting six tracks indicates support for FUN7 project backups.
+Four-track devices retain their existing format ceiling.
+
+### 6T7 DAW options
+
+Object 10 also accepts 45 bytes. Bytes 0..43 retain the six-track MIDI layout.
+Byte 44 holds MODE (bits 0..1: 0 STAND, 1 DAW, 2 CAPT), CCOUT (bit 2), SPP
+(bit 3), and LOST (bits 4..5: 0 RUN, 1 HOLD, 2 STOP). Invalid enum values
+fall back to STAND/RUN. Missing byte 44 defaults to 0x08 (STAND, CCOUT OFF,
+SPP ON, LOST RUN). New global descriptors are appended after G_CH5; these
+settings are per device and do not change the FUN7 project format.
+
+### 6T8 companion controls
+
+On the existing `G_RMCH` (REMOTE) channel, CC119 values 0..3 request sections A..D. The audio thread hands the request to the UI for validation; a valid playing-loop request joins the existing next-bar section queue. Stopped requests use the regular section load path. Empty sections, values >3 and requests during SONG playback are ignored. STOP/SPP cancel pending requests. This consumes no new settings bytes or SysEx command numbers.
+
+The optional Max for Live companion stores an acknowledged sound snapshot in a Live Set Blob parameter. It uses INFO, LIVE state, TRACK, TRACK_DUMP and DUMP for capture; TRACK/PRESET, TRACK_PARAM and global SET for recall. Mode-dependent parameters (ENV SYNC and INSERT TYPE) precede their values. Complete working FM6 patches use GET/PUT (68/69), **target 0 (track RAM) only**, followed by readback. The companion never writes sample slots, project slots, backup objects or FM6 banks. Template section clips send plain CC119 directly. See `integrations/ableton/README.md`.
+
+### 6T9 editor compatibility
+
+TRACK and LIVE solo masks, and LIVE record masks, carry all NTRK bits (six bits on PEEEO). LIVE replies contain `20 + 3*NTRK` bytes including op, plus the 18-byte master/throw/drum-attribute tail when present: 56 bytes on the six-track fork, 50 on upstream. Parse the track triples before reading that tail. GLO mix keys use mute 0..NTRK-1, solo NTRK..2*NTRK-1, fill 2*NTRK and fill-bar 2*NTRK+1; section keys remain A..D independently.
+
+Project `.sloopsong` exports add optional `tracks` and `projectFormat` metadata without changing the file format identifier/version. Existing files remain readable. Reject unsupported counts/formats before BK_PUT and validate unique object ids, lengths and CRCs.
