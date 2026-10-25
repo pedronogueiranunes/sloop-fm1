@@ -391,7 +391,7 @@
   .dgrid button.on.l3 { background: var(--fg); }
 
   /* ---- mixer: the device's TRACKS strips ---- */
-  .mixer { display: grid; grid-template-columns: repeat(4, minmax(0, 170px)); gap: 12px; margin: 4px 0 12px; }
+  .mixer { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 170px)); gap: 12px; margin: 4px 0 12px; }
   .strip { --c: var(--t1); background: var(--bg); border: 1px solid var(--line); padding: 12px 10px; display: flex; flex-direction: column;
            align-items: center; gap: 8px; min-width: 0; }
   .strip.sel { border-color: var(--c); }
@@ -647,7 +647,7 @@
   /* mixer, master fx, effects */
   .lvcols { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 0 12px; align-items: start; }
   .lvknobs { display: flex; flex-wrap: wrap; gap: 8px 12px; }
-  .lvstrips { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .lvstrips { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
   .lstrip { background: var(--bg); border: 1px solid var(--line); border-top: 4px solid var(--c); padding: 8px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .lstrip.target { border-color: var(--c); }
   .lstrip.muted .lsbody { opacity: .4; }
@@ -1143,6 +1143,7 @@
       <div class="card" id="sfgroup" hidden>
         <h2 data-t="sfTitle" data-ic="control_arrow_loop"></h2>
         <p class="dim" data-t="sfHelp"></p>
+        <p class="bar"><label><span data-t="sfName"></span> <input id="sf-name" type="text" maxlength="40" placeholder="SLOOP project"></label></p>
         <p class="bar"><button id="sf-save" class="pri" data-t="sfSave" data-ic="symbol_download"></button> <button id="sf-load" data-t="sfLoad" data-ic="symbol_upload"></button>
           <input id="sf-file" type="file" accept=".sloopsong,.json,application/json" hidden></p>
       </div>
@@ -1240,6 +1241,10 @@ const LIVE = { STATE: 0, PLAY: 1, KEY: 2, FX: 3, REC: 4, UNDO: 5, LY_KEY: 5, LY_
   /* the GLO keys (ui_layers.c layer_key): 1..4 mute, 5..8 solo, 9 fill while held, 10 fill next bar, 16 tap tempo;
      the SAVE keys: 1..4 play A..D, 5..8 store into A..D, 13 loop / song, 14 SONG REC */
   MUTE: 0, SOLO: 4, FILL: 8, FILL_BAR: 9, TAP: 15, SEC: 0, STORE: 4, SONG: 12, SONG_REC: 13 };
+/* Track-dependent GLO key positions; section A..D and four-note chords are independent. */
+const FORK_TRACKS = 6;
+const mixKeys = (n) => ({ solo: n, fill: 2 * n, fillBar: 2 * n + 1 });
+const midiTrackIds = (n) => n === FORK_TRACKS ? [33, 34, 35, 50, 51, 24] : [33, 34, 35, 24];
 /* ---- LIVE pro (editor only: the 2.7 firmware as it is, every value through TRACK_MIX / TRACK_PARAM / SET).
    Scenes: what a track and the master sound like, kept in the browser, recalled at once or morphed over bars, or mixed
    with the A / B crossfader. Ids: core.h P_* and G_* (2.7: P_E0 = 63). cont: values that glide in a morph; the others
@@ -1466,14 +1471,16 @@ const parse = {
   [CMD.TRACK_MIX](a) { const r = new Reader(a); return { track: r.b(), level: r.v(), mute: r.b() }; },
   /* v12: the live state (firmware editor_live.c): per track its step, its length and its meter (8 log2 |peak|: 48 = -54 dB,
      128 = +6 dB, 0 = silent) */
-  [CMD.LIVE](a) {
+  [CMD.LIVE](a, info) {
     const r = new Reader(a);
     const op = r.b(), f = r.b(), f2 = r.b();
     const o = { op, playing: !!(f & 1), asked: !!(f & 2), songMode: !!(f & 4), songRuns: !!(f & 8), fillNow: !!(f & 16),
       fillBar: !!(f & 32), songRec: !!(f & 64), recWait: !!(f2 & 1), canUndo: !!(f2 & 2), canRedo: !!(f2 & 4), freeTake: !!(f2 & 8),
       bpm: r.v(), sec: r.b() - 1, next: r.b() - 1, chainN: r.b(), chainI: r.b(), mutes: r.b(), solo: r.b(), rec: r.b(),
       sel: r.b(), fx: r.b() - 1, cpu: r.b(), songAt: r.b(), songLen: r.b(), songBar: r.b(), songBars: r.b(), ready: r.b(), tracks: [] };
-    for (let k = 0; k < 4 && r.i + 3 <= a.length; k++) o.tracks.push({ step: r.b(), len: r.b(), meter: r.b() });
+    const n = info?.ntrk || (a.length >= 50 ? (a.length - 38) / 3 : (a.length - 20) / 3);
+    if (![4, FORK_TRACKS].includes(n) || ![20 + 3 * n, 38 + 3 * n].includes(a.length)) throw new Error("invalid LIVE reply");
+    for (let k = 0; k < n; k++) o.tracks.push({ step: r.b(), len: r.b(), meter: r.b() });
     if (r.i + 18 <= a.length) {                     /* (2.7, ops 6..12) the master, the THROWs, the drum sounds' TUNE / DECAY */
       const m = r.b();
       o.pro = true; o.master = m ? m - 1 : -1; o.throws = r.b();
@@ -2457,7 +2464,7 @@ function backupObjects(file) {
 /* the project format of a backup object ("FUN6" .. as stored, low byte first: 6 ..), 0 not a project */
 const bkProjFormat = (d) => (d && d.length >= 4 && d[1] === 0x4E && d[2] === 0x55 && d[3] === 0x46 ? d[0] - 0x30 : 0);
 /* the newest project format a device reads, from its INFO: 2.6 (71 parameters) 6, 2.4 .. 2.5 (61) 5, older 4 */
-const bkDevFormat = (info) => (info.pcount >= 71 ? 6 : info.pcount >= 61 ? 5 : 4);
+const bkDevFormat = (info) => (info.ntrk === 6 ? 7 : info.pcount >= 71 ? 6 : info.pcount >= 61 ? 5 : 4);
 /* "SLOOP 2.6" -> true when at least maj.min.patch */
 const bkFwAtLeast = (v, want) => {
   const m = /(\d+)\.(\d+)(?:\.(\d+))?/.exec(String(v || ""));
@@ -2472,7 +2479,8 @@ async function backupRestore(rq, file, progress = () => {}) {
      the first project, the preset banks already replaced) */
   const info = parse[CMD.INFO](await rq(req.info(), { timeout: 1000, retries: 2 }));
   const newest = Math.max(0, ...[0, 2, 3, 4, 5].filter((id) => m.has(id)).map((id) => bkProjFormat(m.get(id))));
-  if (newest > bkDevFormat(info)) throw new BackupError("bkNewer", `${file.firmware || "?"} > ${info.version}`);
+  if (newest > bkDevFormat(info) || (file.tracks || 0) > (info.ntrk || 1) || (file.projectFormat || 0) > bkDevFormat(info))
+    throw new BackupError("bkNewer", `${file.firmware || "?"} > ${info.version}`);
   /* (2.6) a backup of a 2.6 FM-1 without object 10 had the MIDI settings at their defaults (nothing learned, channels
      1 2 3, drums 10, OTHER SEL, BEND 2): restored as such, not left as the device has them now */
   if (!m.has(10) && bkFwAtLeast(file.firmware, [2, 5, 1])) {
@@ -2687,7 +2695,7 @@ async function songCapture(rq, info, name, progress = () => {}) {
     if (it.id === 1) { if (songOrderOk(d)) order = d.slice(SONGF.ORDER_OFF, SONGF.ORDER_OFF + SONGF.ORDER_LEN); continue; }
     objects.push({ id: it.id, len: it.len, crc: it.crc, data: b64enc(d) });
   }
-  return { format: SONGF.FORMAT, version: SONGF.VERSION, name: String(name || "").slice(0, 40), firmware: info.version,
+  return { format: SONGF.FORMAT, version: SONGF.VERSION, tracks: info.ntrk || 1, projectFormat: bkDevFormat(info), name: String(name || "").slice(0, 40), firmware: info.version,
     date: new Date().toISOString(), order: order ? b64enc(order) : null, objects };
 }
 /* a song file -> {objects: Map id -> bytes, order: bytes or null}; every object checked against its length and CRC */
@@ -2696,11 +2704,11 @@ function songObjects(file) {
   const m = new Map();
   for (const o of file.objects) {
     const d = b64dec(o.data || "");
-    if (!(o.id === 0 || SONGF.SECS.includes(o.id)) || d.length !== o.len || crc32(d) !== (o.crc >>> 0))
+    if (m.has(o.id) || !(o.id === 0 || SONGF.SECS.includes(o.id)) || d.length !== o.len || crc32(d) !== (o.crc >>> 0))
       throw new BackupError("songBadFile", `object ${o.id}: damaged`);
     m.set(o.id, d);
   }
-  if (!m.has(0)) throw new BackupError("songBadFile", "no loop");
+  if (!m.get(0)?.length) throw new BackupError("songBadFile", "no loop");
   const order = file.order ? b64dec(file.order) : null;
   if (order && order.length !== SONGF.ORDER_LEN) throw new BackupError("songBadFile", "order");
   return { objects: m, order };
@@ -2709,8 +2717,21 @@ function songObjects(file) {
 async function songLoad(rq, file, progress = () => {}) {
   const { objects: m, order } = songObjects(file);
   const info = parse[CMD.INFO](await rq(req.info(), { timeout: 1000, retries: 2 }));
+  if (!info.version.includes("(MOCK)")) {
+    for (const [id, d] of m) {
+      if (id !== 0 && !d.length) continue;
+      const format = bkProjFormat(d);
+      if (format < 1 || format > 7 || d.length < 12) throw new BackupError("songBadFile", "not a native project (demo exports are simulator-only)");
+      const view = new DataView(d.buffer, d.byteOffset, d.byteLength);
+      let hash = 0x811c9dc5;
+      for (let i = 0; i < d.length - 4; i++) hash = Math.imul(hash ^ d[i], 0x01000193) >>> 0;
+      if (view.getUint32(4, true) !== d.length || view.getUint32(d.length - 4, true) !== hash)
+        throw new BackupError("songBadFile", "project header/checksum");
+    }
+  }
   const newest = Math.max(0, ...[...m.values()].map(bkProjFormat));
-  if (newest > bkDevFormat(info)) throw new BackupError("bkNewer", `${file.firmware || "?"} > ${info.version}`);
+  if (newest > bkDevFormat(info) || (file.tracks || 0) > (info.ntrk || 1) || (file.projectFormat || 0) > bkDevFormat(info))
+    throw new BackupError("bkNewer", `${file.firmware || "?"} > ${info.version}`);
   const total = [...m.values()].reduce((s, d) => s + d.length, 0) || 1;
   let done = 0;
   const step = (n) => { done += n; progress(done, total); };
@@ -2914,7 +2935,7 @@ function mockSettings() {
 }
 /* backup object 10 at its default: nothing learned, CH1-3 = 1 2 3, drums 10, OTHER SEL, BEND 2 (a 32 / 36-byte one: the
    map, the map and the channels) */
-const mlDefault = (b) => b.every((x, i) => i < 32 ? !x : i === 32 ? x === 1 : i === 33 ? x === 2 : i === 34 ? x === 3 : i === 35 ? x === 10 : i === 36 ? x === 2 : !x);
+const mlDefault = (b) => b.every((x, i) => i < 32 ? !x : i === 32 ? x === 1 : i === 33 ? x === 2 : i === 34 ? x === 3 : i === 35 ? x === 10 : i === 36 ? x === 2 : i === 40 ? x === 4 : i === 41 ? x === 5 : i === 44 ? x === 8 : !x);
 function makeMockDevice(opt = {}) {
   const NONOFF = ["OFF", "ON"], NDIV = ["1/4", "1/8", "1/16", "1/32", "8T", "16T"], NGO = ["--", "GO"], NDASH = ["--"];
   const NSDIV = [...NDIV, "1/2", "1BAR", "2BAR"], NDLY = [...NDIV, "1/8D", "1/16D", "1/4D"];   /* SLOOP 2.4: long steps, dotted delays */
@@ -3135,10 +3156,15 @@ function makeMockDevice(opt = {}) {
     [[60, 60, 61, 61, 62, 0, 63, 63, 64, 65, 65, 0, 66, 66, 66, 67], [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]],
     [[60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75], [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]],
   ];
+  if (opt.ntrk === FORK_TRACKS) {
+    GP[24].label = "DRUM";
+    GP.push(...[4, 5].map((k) => E("CH" + k, ["OFF", ...Array.from({ length: 16 }, (_, i) => String(i + 1))], k)),
+      E("MODE", ["STAND", "DAW", "CAPT"], 0), E("CCOUT", NONOFF, 0), E("SPP", NONOFF, 1), E("LOST", ["RUN", "HOLD", "STOP"], 0));
+  }
   const P_E0 = TP.length, P_COUNT = P_E0 + 8, G_COUNT = GP.length, NSTEP = 64, G_ENGSEL = 20, P_SLCR = 45, P_CHORD = 49;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   /* four tracks (firmware v3); engine / preset / p / step below are the selected track's */
-  const NTRK = 4, TRK_DRUM = 3;
+  const NTRK = opt.ntrk === FORK_TRACKS ? FORK_TRACKS : 4, TRK_DRUM = NTRK - 1;
   const newTrack = (i) => ({ engine: 0, preset: 0, drum: i === TRK_DRUM, fm6: FM6.INIT_PK.slice(),   /* fm6: the FM6 patch (eng_fm6.c fm6_patch) */
     p: TP.map((d) => d.def).concat(i === TRK_DRUM ? [5, 0, 0, 0, 0, 0, 0, 0] : new Array(8).fill(0)),
     step: Array.from({ length: NSTEP }, () => ({ n: 0, notes: [0, 0, 0, 0], time: 2, flags: 0, vel: 0, lvl: 0, rat: 0 })),
@@ -3147,7 +3173,7 @@ function makeMockDevice(opt = {}) {
     fill: new Array(NSTEP / 4).fill(0) });           /* v8: fill conditions, 2 bits a step */
   const NLOCK = 24;
   const st = {
-    tracks: [0, 1, 2, 3].map(newTrack), sel: 0, rec: 0, solo: 0,
+    tracks: Array.from({ length: NTRK }, (_, i) => newTrack(i)), sel: 0, rec: 0, solo: 0,
     g: GP.map((d) => d.def),
     slots: [null, null, null, null],
     smp: [0, 1, 2, 3].map(() => ({ flash: new Uint8Array(SMP.SLOT_SIZE).fill(0xFF), zones: 0, name: "", len: 0, next: SMP.DATA_OFF })),   /* USR1..4 (2.4: USR4) */
@@ -3327,7 +3353,7 @@ function makeMockDevice(opt = {}) {
         b(0);
         break;
       case CMD.INFO:
-        s(opt.legacy ? "FELUCCA 0.4 BETA (MOCK)" : opt.v3 ? "FELUCCA 0.8 (MOCK)" : "FELUCCA SLOOP 2.6 (MOCK)"); b(ENG.length); b(P_COUNT); b(G_COUNT); b(NSTEP); b(P_E0);
+        s(opt.legacy ? "FELUCCA 0.4 BETA (MOCK)" : opt.v3 ? "FELUCCA 0.8 (MOCK)" : opt.ntrk === FORK_TRACKS ? "FELUCCA SLOOP 6T9 (MOCK)" : "FELUCCA SLOOP 2.6 (MOCK)"); b(ENG.length); b(P_COUNT); b(G_COUNT); b(NSTEP); b(P_E0);
         ENG.forEach((e) => s(e.name));
         if (!opt.legacy) b(NTRK);
         if (v5) b(mockProto);   /* v12: LIVE (2.7), v11: your theme (2.7) */   /* v10: SYN kits (v9: FM6 patches, v8: fill conditions, v7: nudges and locks, v6: backup) */
@@ -3339,7 +3365,18 @@ function makeMockDevice(opt = {}) {
         const arr = a[0] ? st.g : st.p;
         if (cmd === CMD.SET && a.length >= 4) {
           if (a[0] === 1 && a[1] === G_ENGSEL) setEngine(clamp(v14dec(a[2], a[3]), 0, ENG.length - 1));
-          else if (d.max > d.min) arr[a[1]] = clamp(v14dec(a[2], a[3]), d.min, d.max);
+          else if (d.max > d.min) {
+            const before = arr[a[1]];
+            arr[a[1]] = clamp(v14dec(a[2], a[3]), d.min, d.max);
+            if (NTRK === FORK_TRACKS && a[0] === 1 && midiTrackIds(NTRK).includes(a[1])) {
+              const dir = arr[a[1]] > before ? 1 : -1;
+              while (arr[a[1]] && midiTrackIds(NTRK).some(id => id !== a[1] && arr[id] === arr[a[1]])) {
+                arr[a[1]] += dir;
+                if (arr[a[1]] < 1) arr[a[1]] = 0;
+                if (arr[a[1]] > 16) { arr[a[1]] = before; break; }
+              }
+            }
+          }
           if (!a[0] && a[1] === P_E0 + 7 && st.engine === FM6_E && !drumSel()) fm6Slot(st.tracks[st.sel], arr[a[1]]);   /* PTCH (fm6_poll) */
         }
         b(a[0]); b(a[1]); v(arr[a[1]]);
@@ -3352,7 +3389,7 @@ function makeMockDevice(opt = {}) {
         if (a.length >= 1 && a[0] < NTRK) st.sel = a[0];
         b(st.sel); b(NTRK);
         st.tracks.forEach((t, i) => { b(engOf(t)); b(t.preset); v(i === TRK_DRUM ? st.g[25] : t.p[0]); b(t.p[40] ? 1 : 0); b((st.rec >> i) & 1); });
-        if (v5) b(st.solo & 15);
+        if (v5) b(st.solo & ((1 << NTRK) - 1));
         break;
       case CMD.TRACK_MIX: {
         if (a.length < 1 || a[0] >= NTRK) return null;
@@ -3595,7 +3632,7 @@ function makeMockDevice(opt = {}) {
             }
             else if (id === 10) {                           /* the MIDI part (2.6; editor.c: stopped only): the LEARN
                                                                map (16 x 2 bytes), then GLO > MIDI's channels (4 bytes) */
-              if (P.len !== 32 && P.len !== 36 && P.len !== 40) throw 0;
+              if (![32, 36, 40, 42, 44, 45].includes(P.len)) throw 0;
               if (st.playing) rc = 3;
               else st.ml = P.buf.slice();
             }
@@ -3714,11 +3751,11 @@ function makeMockDevice(opt = {}) {
       if (play && !st.playing && !(L.songMode && !st.slots.some(Boolean))) { st.playing = true; L.t0 = Date.now(); }
       else if (!play && st.playing) { st.playing = false; L.next = -1; L.fillBar = false; if (st.rec) st.rec = 0; }
     } else if (op === LIVE.KEY && a.length >= 4 && x === LIVE.LY_MIX && y < 16) {
-      if (!z) { if (y === LIVE.FILL) L.fillHeld = false; return; }
-      if (y < 4) st.tracks[y].p[40] = st.tracks[y].p[40] ? 0 : 1;
-      else if (y < 8) st.solo ^= 1 << (y - 4);
-      else if (y === LIVE.FILL) L.fillHeld = true;
-      else if (y === LIVE.FILL_BAR) { L.fillBar = !L.fillBar; L.fillAt = nextBar(); }
+      if (!z) { if (y === mixKeys(NTRK).fill) L.fillHeld = false; return; }
+      if (y < NTRK) st.tracks[y].p[40] = st.tracks[y].p[40] ? 0 : 1;
+      else if (y < 2 * NTRK) st.solo ^= 1 << (y - NTRK);
+      else if (y === mixKeys(NTRK).fill) L.fillHeld = true;
+      else if (y === mixKeys(NTRK).fillBar) { L.fillBar = !L.fillBar; L.fillAt = nextBar(); }
       else if (y === LIVE.TAP) {                     /* ui_layers.c tap_tempo: the last taps' mean, 40..240 */
         const now = Date.now();
         if (L.taps.length && now - L.taps[L.taps.length - 1] > 2000) L.taps = [];
@@ -3756,8 +3793,8 @@ function makeMockDevice(opt = {}) {
     } else if ((op === LIVE.ROLL && a.length >= 5) || (op === LIVE.ERASE && a.length >= 4)) {   /* (kept for the tests) */
       const set = op === LIVE.ROLL ? L.rolls : L.erase, k = `${x}:${y}`, down = op === LIVE.ROLL ? a[4] : z;
       if (down) set.add(k); else set.delete(k);
-      if (op === LIVE.ERASE && down && x === 3) st.tracks[3].dsteps?.forEach((d) => { if (d) d.on &= ~(1 << y); });
-    } else if (op === LIVE.PATTERN && a.length >= 4 && x < 4) {
+      if (op === LIVE.ERASE && down && x === TRK_DRUM) st.tracks[TRK_DRUM].dstep?.forEach((d) => { if (d) d.on &= ~(1 << y); });
+    } else if (op === LIVE.PATTERN && a.length >= 4 && x < NTRK) {
       const t = st.tracks[x], len = lenOf(t);
       if (y === 1) t.p[29] = z ? Math.min(64, len * 2) : Math.max(1, len >> 1);
       L.pattern.push([x, y, z]);
@@ -3775,7 +3812,7 @@ function makeMockDevice(opt = {}) {
     b((st.playing ? 1 : 0) | (L.songMode ? 4 : 0) | (L.songMode && st.playing ? 8 : 0) | (L.fillHeld || now < L.fillTo ? 16 : 0)
       | (L.fillBar ? 32 : 0) | (L.srec ? 64 : 0));
     b((L.recWait ? 1 : 0) | (L.undo === 1 ? 2 : 0) | (L.undo === 2 ? 4 : 0) | (L.ft ? 8 : 0));
-    v(st.g[0]); b(L.sec + 1); b(L.next + 1); b(L.chain.length >= 2 ? L.chain.length : 0); b(0); b(mutes); b(st.solo & 15); b(st.rec & 15); b(st.sel); b(L.fx + 1);
+    v(st.g[0]); b(L.sec + 1); b(L.next + 1); b(L.chain.length >= 2 ? L.chain.length : 0); b(0); b(mutes); b(st.solo & ((1 << NTRK) - 1)); b(st.rec & ((1 << NTRK) - 1)); b(st.sel); b(L.fx + 1);
     b(st.playing ? 18 + Math.round(Math.random() * 6) : 9);
     b(0); b(4); b(0); b(4);                          /* (the song: entry 0 of 4, bar 0 of 4) */
     b(st.slots.reduce((m, x, k) => m | (x ? 1 << k : 0), 0));
@@ -4589,6 +4626,7 @@ const TEXT = {
     lvLatch: "ラッチ", lvFxLoops: "ループ・時間", lvFxTone: "フィルター・EQ", lvFxColour: "音色", lvFxMove: "動き",
     lvKeys: "鍵盤", lvTrack: "トラック", lvOct: "オクターブ", lvVel: "ベロシティ", lvArp: "アルペジオ", lvHold: "ホールド", lvLvl: ["GHOST", "SOFT", "NORM", "HARD"],
     lvNoChan: "このトラックはノートを受けません：GLO > MIDI にチャンネルがなく OTHER が OFF です。",
+    lvCapture: "CAPT ignores incoming notes. Choose MODE DAW or STAND to play the FM-1 from the editor.",
     lvClock: "GLO > SYSTEM > IN = CLOCK：FM-1 はノートを無視します。ここから演奏するには IN を NOTES に。",
     lvShortcuts: "Space 再生/停止 · 1–4 セクション · 5–8 ミュート · Shift+5–8 ソロ · 9 フィル（押す間）· 0 次の小節フィル · B タップ · C 録音 · N 次のソング · Z / X オクターブ · ← → トラック · A W S E D F T G Y H U J K O L P 演奏 · Shift + それらのキー：エフェクト · F1–F8 シーン（Shift：保存）· Esc 全オフ",
     lvPanic: "全オフ", lvStored: "ループを保存：セクション ",
@@ -4610,7 +4648,7 @@ const TEXT = {
     lvxSub_master: "ミックス全体に：DJ フィルタ、ローファイのダスト、キックのダッキング。",
     lvxSub_playlist: "ソングを順番に、1 本のセットとして。",
     lvxHelp_transport: "再生／停止：PLAY ボタンと同じ。録音：演奏中のトラックに録音（FM-1 の REC と同じ）。空のプロジェクトでは、もう一度押すとループが確定。元に戻す／やり直す：最後の録音や編集。\nBPM：ノブを上下にドラッグ（Shift で細かく）、またはタップ。SWING：まっすぐからシャッフルまで。カウンターは小節.拍、ソングモードではソングの位置。\nループ／ソング：ループ再生かソング（セクションの順）。ソング録音：演奏したセクションの順がソングになります。フィル（押す間）、次の小節フィル。\n全オフ：すべてのノートとエフェクトを止めます。全画面：ページのみ。\n2 段目：時計とセットの時間（タップでリセット）、セット録音（FM-1 の USB オーディオを WAV に）、MIDI ラーンとロック。",
-    lvxHelp_sections: "セクションはループ全体：4 トラックのパターン、音色、ミックス。ソングは A、B、C、D（例：A イントロ、B バース、C サビ、D ブレイク）。\n作り方：ループを鳴らし、「ループを保存」の文字を押します。使用中のセクションは確認してから上書き。\n切り替え：A–D をタップ（1–4 キー）。再生中は次の小節から（待つ間点滅）、停止中はすぐ。\nセクションは「何が鳴るか」（ノート）を変えます。ノートを変えずに「どう鳴るか」を変えるにはシーンを使います。\nチェーン：2 つ以上の文字（A B B C…）をタップしてチェーン再生。各セクションをその小節数鳴らして次へ、繰り返し（FM-1 の SAVE + 複数キーと同じ）。チェーン停止で 1 つのセクションに戻ります。",
+    lvxHelp_sections: "セクションはループ全体：全トラックのパターン、音色、ミックス。ソングは A、B、C、D（例：A イントロ、B バース、C サビ、D ブレイク）。\n作り方：ループを鳴らし、「ループを保存」の文字を押します。使用中のセクションは確認してから上書き。\n切り替え：A–D をタップ（1–4 キー）。再生中は次の小節から（待つ間点滅）、停止中はすぐ。\nセクションは「何が鳴るか」（ノート）を変えます。ノートを変えずに「どう鳴るか」を変えるにはシーンを使います。\nチェーン：2 つ以上の文字（A B B C…）をタップしてチェーン再生。各セクションをその小節数鳴らして次へ、繰り返し（FM-1 の SAVE + 複数キーと同じ）。チェーン停止で 1 つのセクションに戻ります。",
     lvxHelp_scenes: "シーンはノブの写真です：各トラックのレベル、ミュート、パン、フィルタ、センド、ドライブ、音色のノブ、エンベロープ、LFO、INSERT、アルペジオ、そしてマスターエフェクト。ノートには触れません。\n例：シーン 1「イントロ」＝フィルタ閉、ドラム小さめ、リバーブ少；シーン 2「ドロップ」＝全開。ループを鳴らして 1、ドロップで 2 をタップ。\n保存：ノブを決めて「保存」、シーンパッドを押す。ダブルクリックで名前。F1–F8 呼び出し、Shift+F1–F8 保存。\nモーフ：「すぐ」は即切替、1–16 小節はゆっくり移ります（ビルドアップ）。＋音色：プリセットとキットも読み込み。＋テンポ：BPM も。\nクロスフェーダー：2 つのシーン（A と B）を選び、手でスライド。",
     lvxHelp_mixer: "トラックごとに 1 本（1–3 シンセ、D ドラム）。リストと ‹ › で音色（ドラムはキット）、☆ でお気に入り。\nフェーダーはレベル（横にメーター）、音色の下の細い線はパターンの位置。\nfilt：左ローパス（暗く）、右ハイパス（細く）。pan：左右。rev、dly、cho：リバーブ、ディレイ、コーラスへの量。drive：サチュレーション。\nミュート／ソロ：GLO + キーと同じ。演奏：下の鍵盤とパフォームがこのトラックに（FM-1 でも選択されるので REC で録音）。",
     lvxHelp_keys: "鍵盤は「演奏」で選んだトラックを MIDI ノートで鳴らします：すぐ鳴り、REC で録音されます。\nパソコン：A W S E D F T G Y H U J K O L P が鍵盤、Z / X でオクターブ。ドラムは同じ文字が 16 パッド、強さは 4 段階（GHOST、SOFT、NORM、HARD）。\nベロシティ：強さ。アルペジオ：トラックのアルペジオモード。ホールド：離しても鳴り続けます。\n演奏／ロール／消去：鍵盤とパッドの動作。ロールは押している間ロールの速さで連打（ARP + キーと同じ）、REC 中は録音されます。消去は押している間そのノートやドラム音をパターンから消します：再生中は通ったステップ、停止中は全ステップ（EDIT + キーと同じ、アンドゥで戻せます）。",
@@ -4769,9 +4807,9 @@ const TEXT = {
     fillCond: "フィル", fcNorm: "通常", fcFill: "フィル時のみ", fcNoFill: "フィル時は休み",
     lockFull: "ロックは 1 トラック 24 個まで。", lockRefused: "このパラメータはロックできません。",
     lockHelp: "ナッジ：ステップの長さの 1/64 単位で早め（−）／遅め（＋）。ロック：そのステップだけパラメータの値を変え、次のステップで元に戻ります。フィル：「フィル時のみ」のステップは GLO ＋ キー 9 を押している間（またはキー 10 で次の小節）だけ鳴り、「フィル時は休み」はその間だけ休みます（グリッドの F と ×）。本体では SEQ ＋ ステップ長押し ＋ KNOB 4（ナッジ）／PRESETS（ロック、ALGORITHM でパラメータ）／OCT+（フィル）。",
-    mixer: "ミキサー", mixHelp: "本体の TRACKS ページと同じ 4 トラック。フェーダーはレベル（ドラムは GLO > DRUMS LEVEL）。パンはどのトラックも選択を変えずに書き込みます（0.8 のファームウェアでは一瞬そのトラックを選びます）。REC は本体での録音待機の表示です。",
+    mixer: "ミキサー", mixHelp: "本体の TRACKS ページと全トラック。フェーダーはレベル（ドラムは GLO > DRUMS LEVEL）。パンはどのトラックも選択を変えずに書き込みます（0.8 のファームウェアでは一瞬そのトラックを選びます）。REC は本体での録音待機の表示です。",
     level: "レベル", pan: "パン", mute: "ミュート", rec: "REC", selectTrack: "選択", selectedTrack: "選択中",
-    projHelp: "FM-1 が持つのは 1 曲です: セクション A〜D（それぞれ 4 トラックのループ: 音色、パターン、テンポ、キー）と、その並び（ソングタブ）。「読込」はセクションを今のループに入れ、「保存」は今のループをセクションにしまいます。4 曲ではありません: 何曲も残すには、曲ごとに下のバックアップをファイルに保存し、使う曲を復元してください。",
+    projHelp: "FM-1 が持つのは 1 曲です: セクション A〜D（それぞれ全トラックのループ: 音色、パターン、テンポ、キー）と、その並び（ソングタブ）。「読込」はセクションを今のループに入れ、「保存」は今のループをセクションにしまいます。4 曲ではありません: 何曲も残すには、曲ごとに下のバックアップをファイルに保存し、使う曲を復元してください。",
     bkTitle: "バックアップ", bkHelp: "FM-1 の中身をすべて 1 つのファイルに保存します: 今のループ、ソング（セクション A〜D とその並び）、ユーザープリセット、FM6 の音色バンク、サンプル USR1〜4、設定（色、キャリブレーション、ソング、ライト）。復元すると、本体はファイルの状態に戻ります（今の内容は上書きされます）。",
     bkSave: "バックアップを保存", bkLoad: "ファイルから復元", bkSaving: "バックアップ中 ", bkSaved: "バックアップを保存しました",
     bkRestoring: "復元中 ", bkRestored: "復元しました", bkConfirm: "FM-1 の今の内容をすべてこのバックアップで置き換えます。続けますか？",
@@ -4909,11 +4947,11 @@ const TEXT = {
   },
   en: {
     /* 2.7: the LIVE page */
-    sfTitle: "Songs", sfHelp: "A song file holds the loop playing, the sections A–D and their order (the SONG screen). Keep one per song, and play them one after the other from the LIVE page's playlist. Loading one replaces A–D and the loop on the FM-1 (stop it first).",
-    sfSave: "Export this song", sfLoad: "Load a song file", sfName: "The song's name", sfSaving: "Exporting the song ", sfSaved: "Song exported: ",
-    sfLoading: "Loading the song ", sfLoaded: "Song loaded: ", sfConfirm: "Load \"{name}\"? The sections A–D and the loop on the FM-1 are replaced.",
+    sfTitle: "Projects", sfHelp: "Export all six tracks, the working loop, sections A–D and their arrangement as one project file. Keep named files on your computer or in Files/iCloud Drive. User samples and sound banks are shared resources; use a full backup to include them. Import replaces A–D and the working loop on the FM-1; stop playback first.",
+    sfSave: "Export project", sfLoad: "Import project", sfName: "Project name", sfSaving: "Exporting project ", sfSaved: "Project exported: ",
+    sfLoading: "Loading project ", sfLoaded: "Project loaded: ", sfConfirm: "Load \"{name}\"? The sections A–D and the loop on the FM-1 are replaced.",
     songBadFile: "Not a SLOOP song file", plTitle: "playlist", plAdd: "add songs", plSave: "save the list", plOpen: "open a list",
-    plNext: "next song", plAuto: "play when loaded", plEmpty: "Export your songs (Song & sections → Export this song), then add them here.",
+    plNext: "next song", plAuto: "play when loaded", plEmpty: "Export your songs (Projects → Export project), then add them here.",
     plLoad: "load", plUp: "up", plDown: "down", plRemove: "remove", plBadList: "Not a SLOOP playlist",
     tabLive: "LIVE", lvNeeds: "Transport, sections, fills and effects need SLOOP 2.7 on the FM-1. The mixer and the keys work.",
     lvPlay: "play", lvStop: "stop", lvRec: "rec", lvRecArm: "rec armed", lvRecFree: "rec: close loop", lvUndo: "undo", lvRedo: "redo", lvBpm: "BPM", lvTap: "tap",
@@ -4926,8 +4964,9 @@ const TEXT = {
     lvLatch: "latch", lvFxLoops: "loops & time", lvFxTone: "filter & EQ", lvFxColour: "colour", lvFxMove: "movement",
     lvKeys: "keys", lvTrack: "track", lvOct: "octave", lvVel: "velocity", lvArp: "arp", lvHold: "hold", lvLvl: ["GHOST", "SOFT", "NORM", "HARD"],
     lvNoChan: "The FM-1 does not take notes for this track: GLO > MIDI gives it no channel and OTHER is OFF.",
+    lvCapture: "CAPT ignores incoming notes. Choose MODE DAW or STAND to play the FM-1 from the editor.",
     lvClock: "GLO > SYSTEM > IN = CLOCK: the FM-1 ignores notes. Set IN to NOTES to play from here.",
-    lvShortcuts: "Space play / stop · 1–4 sections · 5–8 mute · Shift+5–8 solo · 9 fill (hold) · 0 fill bar · B tap · C rec · N next song · Z / X octave · ← → track · keys A W S E D F T G Y H U J K O L P play · Shift + those keys: effects · F1–F8 scenes (Shift: store) · Esc all off",
+    lvShortcuts: "Alt+1–6 mute · Alt+Shift+1–6 solo · Space play / stop · 1–4 sections · 5–8 mute · Shift+5–8 solo · 9 fill (hold) · 0 fill bar · B tap · C rec · N next song · Z / X octave · ← → track · keys A W S E D F T G Y H U J K O L P play · Shift + those keys: effects · F1–F8 scenes (Shift: store) · Esc all off",
     lvPanic: "all off", lvStored: "Loop saved into section ",
     lvxHelpShow: "how it works", lvxViewAll: "view: everything", lvxViewSimple: "view: essentials",
     lvxGuideTitle: "first live in 5 steps", lvxGuideOk: "got it",
@@ -4935,7 +4974,7 @@ const TEXT = {
       "Build your song with the sections A–D: play a loop you like, press A under “save the loop into”, change the loop, save it into B… Tap A, B, C or D: the FM-1 jumps there at the next bar.",
       "Mix with the faders, mute and solo. Hold an effect pad (LOOP 4, STOP, KILL LOW…) for a punch-in that lasts while you hold it.",
       "Scenes change how it sounds, not what plays: store a calm mix in scene 1 (filters closed, little reverb) and a big one in scene 2, then tap 1 and 2 — or choose a morph of 4 bars to glide from one to the other.",
-      "For a whole show: export each song (Song & sections → Export this song) and add them to the playlist, teach your MIDI controller the page (MIDI learn), lock the page before you go on, and record the set."],
+      "For a whole show: export each song (Projects → Export project) and add them to the playlist, teach your MIDI controller the page (MIDI learn), lock the page before you go on, and record the set."],
     lvxGuideFoot: "Every card has a “?” that explains it, and a mouse over a control says what it does. “view: essentials” hides the advanced cards.",
     lvxSub_transport: "Start, stop, record and keep time.",
     lvxSub_sections: "What plays: the four parts of your song (the notes).",
@@ -4947,14 +4986,14 @@ const TEXT = {
     lvxSub_master: "On the whole mix: the DJ filter, the lo-fi dust, the kick's ducking.",
     lvxSub_playlist: "Your songs, one after the other, for a whole set.",
     lvxHelp_transport: "PLAY / STOP: as the PLAY button. REC: records into the track you play (as REC on the FM-1); in an empty project, REC again closes the loop. undo / redo: the last recording or edit.\nBPM: drag the knob up or down (Shift: fine), or tap TAP in time. SWING: from straight to shuffled. The counter shows bar.beat, and in song mode the part and bar of the song.\nloop / song: the loop playing, or the song (the sections in order). song rec: the order you play the sections becomes the song. FILL while held, FILL BAR: the next bar is a fill (the steps marked “fill only” play).\nall off: lets go of every note and effect. full screen: the page alone.\nThe second row: the clock and the set's time (tap it to start again), record set (a WAV of what the FM-1 plays, from its USB audio), MIDI learn and lock (see their tips).",
-    lvxHelp_sections: "A section is a whole loop: the four tracks' patterns, sounds and mix. A song is A, B, C, D — for example A intro, B verse, C chorus, D break.\nTo make one: play the loop you want, then under “save the loop into” press a letter. A used section asks before it is replaced.\nTo switch: tap A–D (or keys 1–4). Playing, the new section starts at the next bar (it blinks while it waits); stopped, at once.\nSections change WHAT plays (the notes). To change HOW it sounds without changing the notes, use the scenes.\nchain: tap two or more letters (A B B C…), then play chain: each section plays for its own bars, then the next, and the chain loops — as SAVE + several keys on the FM-1. stop chain goes back to one section.",
+    lvxHelp_sections: "A section is a whole loop: all tracks' patterns, sounds and mix. A song is A, B, C, D — for example A intro, B verse, C chorus, D break.\nTo make one: play the loop you want, then under “save the loop into” press a letter. A used section asks before it is replaced.\nTo switch: tap A–D (or keys 1–4). Playing, the new section starts at the next bar (it blinks while it waits); stopped, at once.\nSections change WHAT plays (the notes). To change HOW it sounds without changing the notes, use the scenes.\nchain: tap two or more letters (A B B C…), then play chain: each section plays for its own bars, then the next, and the chain loops — as SAVE + several keys on the FM-1. stop chain goes back to one section.",
     lvxHelp_scenes: "A scene is a photo of your knobs: each track's level, mute, pan, filter, sends, drive, sound knobs, envelope, LFO, INSERT and arp, and the master effects. It does not touch the notes.\nExample: scene 1 “intro” = filters closed, drums low, little reverb; scene 2 “drop” = everything open and loud. Play your loop, tap 1, then 2 at the drop: the FM-1 jumps from one sound to the other.\nTo store: set the knobs as you want them, press STORE, then a scene pad. Double-click a pad to name it. F1–F8 recall, Shift+F1–F8 store.\nmorph: “at once” jumps; 1–16 bars glides there slowly (a build-up). + sounds: the scene also loads its presets and kit. + tempo: it also sets the BPM.\nThe crossfader: pick two scenes (A and B) and slide between them by hand, like a DJ.",
-    lvxHelp_mixer: "One strip per track (1–3 synths, D drums). The list and ‹ › change the sound (the drums: the kit); ☆ makes it a favourite.\nThe fader is the level (its meter beside it); the thin bar under the sound is where the pattern is.\nfilt: left a low-pass (darker), right a high-pass (thinner). pan: left / right. rev, dly, cho: how much goes to the reverb, delay, chorus. drive: saturation.\nmute / solo: as GLO + key. play: the keys below and the PERFORM card follow this track (it is selected on the FM-1 too, so REC records it).",
+    lvxHelp_mixer: "One strip per track (five synths and drums on the six-track fork). The list and ‹ › change the sound (the drums: the kit); ☆ makes it a favourite.\nThe fader is the level (its meter beside it); the thin bar under the sound is where the pattern is.\nfilt: left a low-pass (darker), right a high-pass (thinner). pan: left / right. rev, dly, cho: how much goes to the reverb, delay, chorus. drive: saturation.\nmute / solo: as GLO + key. play: the keys below and the PERFORM card follow this track (it is selected on the FM-1 too, so REC records it).",
     lvxHelp_keys: "The keys play the track chosen with “play” (or the track buttons here), as real MIDI notes: they sound at once, and REC records them.\nOn the computer: A W S E D F T G Y H U J K O L P are the keys (white and black), Z / X change the octave. For the drums, the same letters are the 16 pads, with four strengths (GHOST, SOFT, NORM, HARD).\nvelocity: how hard the keys play. arp: the track's arpeggiator mode, hold: notes keep playing after you let go.\nplay / roll / erase: what the keys and pads do. roll repeats the note or drum sound while you hold it, at the roll rate (as ARP + key); playing with REC on, it is recorded. erase removes that note or drum sound from the pattern while you hold it: playing, the steps it passes; stopped, every step (as EDIT + key; undo brings it back).",
     lvxHelp_perform: "Everything you can turn on the track you play, without menus.\nsound: the engine's own values (as the FM-1's EDIT page), the three macros (FLT PIT SHP), the envelope and glide, the LFO.\narp & key: the arpeggiator (mode, rate, octaves, gate, swing, order, hold); the key (root, scale, chord, transpose) — “every synth track” sends the key to all three synths.\ninsert & bus: the track's INSERT effect and filter; the shared delay, reverb, chorus, TEXTURE (a background bed) and the metronome.\nsteps: the pattern as a grid. Tap a step to turn it on or off (a new synth step plays the last note you played); right-click for its fill condition (yellow: only in a fill, red: never in a fill). LEN, DIV, SWG, GATE: the pattern's length, speed, swing and note length.\nThe drums' sound tab: pick a pad, then its tune (semitones) and decay, as the DRUMS screen's SOUND page. The steps tab's pattern buttons: shift the whole pattern a step, half or double its length, transpose it — each one undo.",
     lvxHelp_fx: "Punch-in effects play only while you hold the pad (or Shift + a letter key), then the sound comes back exactly as it was: nothing is recorded or changed.\nloops & time: repeat the last beats (LOOP 4 … 32), stutter, reverse, stop, half speed, rewind, freeze. filter & EQ: low / high pass, kill a band, phone. colour: crush, alias, octave up, flanger, echo. movement: gate, wobble, auto-pan, mono, fade out.\nlatch: a tap turns the effect on and it stays; another tap (or another effect) turns it off.",
     lvxHelp_master: "These act on the whole mix, after the tracks.\nfilter: a DJ filter (left darker, right thinner, middle off). dust: lo-fi — noise, wobble and grit. duck: the kick pushes the other tracks down (the “pumping” of dance music).\nvolume: the FM-1's level from here; turning its MASTER knob takes it back (knob: at once). rev throw / echo throw: hold for every track to pour into the reverb or the delay, as FX + OCT- / OCT+ — let go and it falls back.",
-    lvxHelp_playlist: "For a set of several songs. First, save each song as a file: Song & sections → Export this song (the loop, A–D and their order).\nadd songs: put the files here. Tap a song (or next song, key N): the FM-1 stops, loads it in a few seconds and, with “play when loaded”, starts.\n✎ gives a song its tempo (set when it loads) and a cue — a note for you on stage, shown while it plays, with the next song under it.\nsave the list: one file with the songs, your scenes and your MIDI mappings, to take to the gig. The list also stays in this browser.",
+    lvxHelp_playlist: "For a set of several songs. First, save each song as a file: Projects → Export project (the loop, A–D and their order).\nadd songs: put the files here. Tap a song (or next song, key N): the FM-1 stops, loads it in a few seconds and, with “play when loaded”, starts.\n✎ gives a song its tempo (set when it loads) and a cue — a note for you on stage, shown while it plays, with the next song under it.\nsave the list: one file with the songs, your scenes and your MIDI mappings, to take to the gig. The list also stays in this browser.",
     lvxTabSub_sound: "The sound of the track: the engine, the macros, the envelope, the LFO.",
     lvxTabSub_arp: "The arpeggiator and the key the track plays in.",
     lvxTabSub_fx: "The track's INSERT and filter, then the effects all tracks share.",
@@ -5022,7 +5061,7 @@ const TEXT = {
     other: "日本語", connect: "Connect", disconnect: "Disconnect", mock: "Mock device (no hardware)",
     sound: "Sound", engine: "Engine", presets: "Presets", initSound: "Init sound",
     track: "Track", drum: "Drums",
-    saveFile: "Save to file", loadFile: "Load file", projects: "Song & sections",
+    saveFile: "Save to file", loadFile: "Load file", projects: "Projects",
     load: "Load", save: "Save", used: "used", empty: "empty", unknown: "—",
     steps: "Steps", reload: "Reload", clearSeq: "Clear sequence",
     notesHelp: "Enter notes like C4 E4 G4 (up to 4, C4 = 60).",
@@ -5106,9 +5145,9 @@ const TEXT = {
     fillCond: "Fill", fcNorm: "normal", fcFill: "fill only", fcNoFill: "no fill",
     lockFull: "A track holds 24 locks at most.", lockRefused: "This parameter cannot be locked.",
     lockHelp: "Nudge: the step early (-) or late (+), in 1/64 of a step. A lock gives a parameter another value for this step only; the base comes back at the next one. Fill: a \"fill only\" step plays only while GLO + key 9 is held (or key 10 makes the next bar a fill), a \"no fill\" step is silent then (F and \u00d7 on the grid). On the device: SEQ + a step held + KNOB 4 (nudge) / PRESETS (the lock; ALGORITHM picks its parameter) / OCT+ (the fill condition).",
-    mixer: "Mixer", mixHelp: "The four tracks of the device's TRACKS page. The fader is the level (drums: GLO > DRUMS LEVEL). Pan is written to any track without changing the selection (firmware 0.8: by selecting it for a moment). REC shows a track armed for live recording on the device.",
+    mixer: "Mixer", mixHelp: "All tracks of the device's TRACKS page. The fader is the level (drums: GLO > DRUMS LEVEL). Pan is written to any track without changing the selection (firmware 0.8: by selecting it for a moment). REC shows a track armed for live recording on the device.",
     level: "Level", pan: "Pan", mute: "Mute", rec: "REC", selectTrack: "Select", selectedTrack: "Selected",
-    projHelp: "The FM-1 holds one song: four sections A–D, each a loop of the four tracks (sounds, patterns, tempo, key), and the order they play in (the Song tab). Load puts a section into the loop you are working on; Save stores that loop into a section. They are not four songs: to keep several songs, save a Backup file per song (below) and restore the one you want.",
+    projHelp: "The FM-1 holds one song: four sections A–D, each a loop of all tracks (sounds, patterns, tempo, key), and the order they play in (the Song tab). Load puts a section into the loop you are working on; Save stores that loop into a section. They are not four songs: to keep several songs, use Export project below and import the project you want.",
     bkTitle: "Backup", bkHelp: "Everything on the FM-1 in one file: the loop you are working on, the song (its sections A–D and their order), the user presets, the FM6 patch bank, the samples USR1–USR4 and the settings (colours, calibration, the song, the lights). Restoring puts the FM-1 back as it was in the file (what is on it now is replaced).",
     bkSave: "Save a backup", bkLoad: "Restore from a file", bkSaving: "Backing up ", bkSaved: "Backup saved",
     bkRestoring: "Restoring ", bkRestored: "Restored", bkConfirm: "Replace everything on the FM-1 with this backup?",
@@ -5350,7 +5389,7 @@ let mock = null;
 /* ------------------------------------------------------- local browser audio --- */
 let localAudio = null, previewStarting = null, previewPlaying = false, previewOctave = 60, previewKeysHidden = false, previewExpanded = false;
 const previewHeld = new Map();
-let previewPositions = [-1, -1, -1, -1];
+let previewPositions = new Array(FORK_TRACKS).fill(-1);
 const PREVIEW_KEYS = ["a", "w", "s", "e", "d", "f", "t", "g", "y", "h", "u", "j", "k", "o", "l", "p"];
 $("preview").hidden = !MOCK;
 $("preview-volume").setAttribute("aria-label", "Local audio volume");
@@ -5379,7 +5418,7 @@ function renderPreview() {
   $("preview-disclosure").setAttribute("aria-expanded", String(previewExpanded));
   $("preview-disclosure").title = t("previewDisclosureHint");
   const active = !!localAudio?.node;
-  const ready = !!dev?.dump, drum = mock?.state.sel === 3;
+  const ready = !!dev?.dump, drum = mock && mock.state.sel === mock.state.tracks.length - 1;
   previewButton("preview-enable", active ? "previewAudioOn" : "previewAudioOff", active ? "audio" : "muted");
   previewButton("preview-play", previewPlaying ? "previewPause" : "previewPlay", previewPlaying ? "stop" : "play");
   previewButton("preview-stop", "previewStop", "stop");
@@ -5410,13 +5449,13 @@ function renderPreviewSummary() {
   }
   if (!mock || !dev?.dump) { box.textContent = t("previewConnect"); return; }
   const k = mock.state.sel, track = mock.state.tracks[k];
-  const name = k === 3 ? t("drum") : (dev.names[track.engine] || [])[track.preset] || t("track");
+  const name = k === mock.state.tracks.length - 1 ? t("drum") : (dev.names[track.engine] || [])[track.preset] || t("track");
   const position = previewPlaying ? previewPositions[k] : -1;
   const muted = !!track.p[40] || !!(mock.state.solo && !(mock.state.solo & (1 << k)));
   let state = t(previewPlaying ? "previewRunning" : "previewStopped");
   if (position >= 0) {
-    const step = (k === 3 ? track.dstep : track.step)[position];
-    const notes = k === 3 ? DRUM_LANES.filter((_, lane) => step?.on & (1 << lane)).map(([, name]) => name) :
+    const step = (k === mock.state.tracks.length - 1 ? track.dstep : track.step)[position];
+    const notes = k === mock.state.tracks.length - 1 ? DRUM_LANES.filter((_, lane) => step?.on & (1 << lane)).map(([, name]) => name) :
       step?.time === 0 ? step.notes.slice(0, step.n).map(noteName) : [];
     const sound = muted ? t("previewMuted") : notes.length ? notes.join(" + ") : step?.time === 1 ? t("previewTie") : t("previewRest");
     state = `${t("previewStep")} ${position + 1}/${track.p[29]} · ${sound}`;
@@ -5432,7 +5471,7 @@ $("preview-disclosure").addEventListener("click", () => {
 /* Inline edits use the same editor commands as the full sequencer. Serialize clicks so
    two fast toggles (or two drum lanes on one step) cannot overwrite one another. */
 let previewEditQueue = Promise.resolve();
-const previewNotes = [60, 60, 60], previewPages = [0, 0, 0, 0];
+const previewNotes = new Array(FORK_TRACKS).fill(60), previewPages = new Array(FORK_TRACKS).fill(0);
 let previewAllDrums = false, previewDrumExpanded = false;
 function expandPreviewDrums(expanded) {
   previewDrumExpanded = expanded;
@@ -5445,12 +5484,12 @@ function previewSequenceClick(k, index, lane = -1, replacement = null) {
   previewEditQueue = previewEditQueue.then(async () => {
     if (d !== dev || m !== mock || index >= m.state.tracks[k].p[29]) return;
     const track = m.state.tracks[k];
-    const command = k === 3 ? req.drumStep(index, previewToggleDrum(track.dstep[index], lane)) :
+    const command = k === mock.state.tracks.length - 1 ? req.drumStep(index, previewToggleDrum(track.dstep[index], lane)) :
       req.trackStep(k, index, replacement || previewToggleStep(track.step[index], note));
     const response = await d.link.request(command);
     if (d !== dev) return false;
     if (d.sel === k) {
-      if (k === 3) {
+      if (k === mock.state.tracks.length - 1) {
         const r = parse[CMD.DRUM_STEP](response);
         d.dsteps[index] = r; d.steps[index] = drumAsStep(r);
       } else d.steps[index] = parse[CMD.TRACK_STEP](response);
@@ -5532,7 +5571,7 @@ $("preview-note-listen").addEventListener("change", () => { if (!$("preview-note
 function previewCellClick(e, cell, k, lane) {
   const index = +cell.dataset.step;
   if (lane === -2) { expandPreviewDrums(true); return; }
-  if (k === 3 || e.detail === 0) { previewSequenceClick(k, index, lane); return; }
+  if (k === mock.state.tracks.length - 1 || e.detail === 0) { previewSequenceClick(k, index, lane); return; }
   const pending = previewStepGestures.get(cell);
   if (e.detail > 1) { clearTimeout(pending?.timer); return; }
   clearTimeout(pending?.timer);
@@ -5601,7 +5640,7 @@ function previewSequenceCells(k, lane = -1) {
   for (let i = 0; i < 16; i++) {
     const cell = el("button", { type: "button", class: "preview-seq-cell", "data-track": k, "data-lane": lane,
       onclick: (e) => previewCellClick(e, cell, k, lane),
-      ondblclick: k < 3 ? () => previewOpenNote(cell, k).catch(report) : null },
+      ondblclick: k < mock.state.tracks.length - 1 ? () => previewOpenNote(cell, k).catch(report) : null },
       el("span", { class: "preview-seq-note", "aria-hidden": "true" }), el("span", { class: "seq-hit", "aria-hidden": "true" }));
     cells.append(cell);
   }
@@ -5616,24 +5655,24 @@ function renderPreviewSequence() {
     const numbers = el("div", { class: "preview-seq-row preview-seq-numbers" }, el("span"),
       el("div", { class: "preview-seq-steps" }, ...Array.from({ length: 16 }, (_, i) => el("span", { text: i + 1 }))));
     box.append(numbers);
-    for (let k = 0; k < 3; k++) {
+    for (let k = 0; k < mock.state.tracks.length - 1; k++) {
       const picker = el("select", { class: "seq-pitch", onchange: () => { previewNotes[k] = +picker.value; renderPreviewSequence(); } },
         ...Array.from({ length: 128 }, (_, n) => el("option", { value: n, text: noteName(n) })));
       const label = el("div", { class: "preview-seq-label" }, previewTrackButton(k), previewPageTools(k));
       label.lastChild.prepend(picker);
-      box.append(el("div", { class: "preview-seq-row", "data-seq-track": k, style: `--c:var(--t${k + 1})` }, label, previewSequenceCells(k)));
+      box.append(el("div", { class: "preview-seq-row", "data-seq-track": k, style: `--c:${trackColor(k)}` }, label, previewSequenceCells(k)));
     }
     const all = el("button", { type: "button", class: "seq-all-drums", onclick: () => { previewAllDrums = !previewAllDrums; renderPreviewSequence(); } });
     const toggle = el("button", { type: "button", class: "seq-drum-toggle", "aria-controls": "preview-drum-details",
       onclick: () => expandPreviewDrums(!previewDrumExpanded) });
     const details = el("div", { id: "preview-drum-details" },
       el("div", { class: "preview-seq-drumhead" }, el("p", { class: "preview-seq-legend seq-drum-help" }), all));
-    const summary = previewSequenceCells(3, -2);
+    const summary = previewSequenceCells(st.tracks.length - 1, -2);
     for (const cell of summary.children) cell.classList.add("seq-drum-brief");
-    const drums = el("div", { class: "preview-seq-drums", "data-seq-track": 3, style: "--c:var(--t4)" },
-      el("div", { class: "preview-seq-row" }, el("div", { class: "preview-seq-label" }, previewTrackButton(3), previewPageTools(3), toggle), summary), details);
+    const drums = el("div", { class: "preview-seq-drums", "data-seq-track": st.tracks.length - 1, style: "--c:var(--t4)" },
+      el("div", { class: "preview-seq-row" }, el("div", { class: "preview-seq-label" }, previewTrackButton(st.tracks.length - 1), previewPageTools(st.tracks.length - 1), toggle), summary), details);
     for (let lane = 0; lane < 16; lane++) details.append(el("div", { class: "preview-seq-row", "data-drum-lane": lane },
-      el("span", { class: "preview-seq-lane", text: DRUM_LANES[lane][1] }), previewSequenceCells(3, lane)));
+      el("span", { class: "preview-seq-lane", text: DRUM_LANES[lane][1] }), previewSequenceCells(st.tracks.length - 1, lane)));
     box.append(drums);
   }
   st.tracks.forEach((track, k) => {
@@ -5643,7 +5682,7 @@ function renderPreviewSequence() {
     // Keep the page still under the pointer or keyboard focus while editing.
     if ($("preview-follow").checked && position >= 0 && !group.matches(":hover, :focus-within")) previewPages[k] = Math.floor(position / 16) * 16;
     const page = previewPages[k] = Math.min(previewPages[k], Math.floor((len - 1) / 16) * 16);
-    const name = k === 3 ? t("drum") : (dev.names[track.engine] || [])[track.preset] || t("track");
+    const name = k === mock.state.tracks.length - 1 ? t("drum") : (dev.names[track.engine] || [])[track.preset] || t("track");
     const muted = !!track.p[40] || !!(st.solo && !(st.solo & (1 << k)));
     button.querySelector(".seq-name").textContent = name;
     button.querySelector(".seq-position").textContent = `${position < 0 ? "–" : position + 1}/${len}`;
@@ -5659,7 +5698,7 @@ function renderPreviewSequence() {
       b.hidden = len <= 16; b.disabled = disabled;
       b.setAttribute("aria-label", `${t(key)} · ${t("track")} ${k + 1}`); b.title = b.getAttribute("aria-label");
     }
-    if (k < 3) {
+    if (k < mock.state.tracks.length - 1) {
       const picker = group.querySelector(".seq-pitch");
       picker.value = String(previewNotes[k]);
       picker.setAttribute("aria-label", `${t("previewNewNote")} · ${t("track")} ${k + 1}`); picker.title = picker.getAttribute("aria-label");
@@ -5679,28 +5718,28 @@ function renderPreviewSequence() {
         row.hidden = !(previewAllDrums || [0, 2, 3, 4, 5].includes(lane) || (active & (1 << lane)));
       }
     }
-    const source = (k === 3 ? track.dstep : track.step).slice(page, page + 16);
+    const source = (k === mock.state.tracks.length - 1 ? track.dstep : track.step).slice(page, page + 16);
     const stamp = JSON.stringify([source, len, page, lang, previewNotes[k]]);
     if (group.dataset.pattern !== stamp) {
       group.dataset.pattern = stamp;
       for (const cell of group.querySelectorAll(".preview-seq-cell")) {
         const i = Array.prototype.indexOf.call(cell.parentNode.children, cell), index = page + i, s = source[i], lane = +cell.dataset.lane;
-        const notes = k < 3 && s && s.time === 0 ? s.notes.slice(0, s.n).map(noteName) : [];
-        const tie = k < 3 && s?.time === 1;
-        const hits = k === 3 && lane === -2 && s ? DRUM_LANES.filter((_, l) => s.on & (1 << l)).map(([, name]) => name) : [];
-        const on = k === 3 ? lane === -2 ? hits.length > 0 : !!(s?.on & (1 << lane)) : notes.length > 0 || tie;
+        const notes = k < mock.state.tracks.length - 1 && s && s.time === 0 ? s.notes.slice(0, s.n).map(noteName) : [];
+        const tie = k < mock.state.tracks.length - 1 && s?.time === 1;
+        const hits = k === mock.state.tracks.length - 1 && lane === -2 && s ? DRUM_LANES.filter((_, l) => s.on & (1 << l)).map(([, name]) => name) : [];
+        const on = k === mock.state.tracks.length - 1 ? lane === -2 ? hits.length > 0 : !!(s?.on & (1 << lane)) : notes.length > 0 || tie;
         cell.dataset.step = index;
         cell.disabled = index >= len;
         cell.classList.toggle("on", on);
         cell.classList.toggle("unused", index >= len);
         cell.classList.toggle("bar-start", i % 4 === 0);
-        const stored = k < 3 && s?.n > 0 ? s.notes.slice(0, s.n).map(noteName) : [];
-        cell.firstChild.textContent = k === 3 ? lane === -2 ? hits.length > 1 ? String(hits.length) : on ? "●" : "" : on ? "●" : "" : tie ? "→" : stored.length ? stored[0] + (stored.length > 1 ? "+" + (stored.length - 1) : "") : "+";
+        const stored = k < mock.state.tracks.length - 1 && s?.n > 0 ? s.notes.slice(0, s.n).map(noteName) : [];
+        cell.firstChild.textContent = k === mock.state.tracks.length - 1 ? lane === -2 ? hits.length > 1 ? String(hits.length) : on ? "●" : "" : on ? "●" : "" : tie ? "→" : stored.length ? stored[0] + (stored.length > 1 ? "+" + (stored.length - 1) : "") : "+";
         if (lane !== -2) cell.setAttribute("aria-pressed", String(on));
         else cell.setAttribute("aria-controls", "preview-drum-details");
-        const content = k === 3 ? lane === -2 ? hits.join(", ") || t("previewRest") : DRUM_LANES[lane][1] : tie ? t("previewTie") : on ? notes.join(", ") : s?.n > 0 ? s.notes.slice(0, s.n).map(noteName).join(", ") : noteName(previewNotes[k]);
-        const description = `${t(lane === -2 ? "previewShowDrumGrid" : k < 3 && s?.n > 0 ? on ? "previewDeactivate" : "previewReactivate" : on ? "previewRemove" : "previewAdd")} · ${content} · ${t("track")} ${k + 1} · ${t("previewStep")} ${index + 1}`;
-        cell.setAttribute("aria-label", description); cell.title = description + (k < 3 ? " · " + t("previewDoubleClick") : "");
+        const content = k === mock.state.tracks.length - 1 ? lane === -2 ? hits.join(", ") || t("previewRest") : DRUM_LANES[lane][1] : tie ? t("previewTie") : on ? notes.join(", ") : s?.n > 0 ? s.notes.slice(0, s.n).map(noteName).join(", ") : noteName(previewNotes[k]);
+        const description = `${t(lane === -2 ? "previewShowDrumGrid" : k < mock.state.tracks.length - 1 && s?.n > 0 ? on ? "previewDeactivate" : "previewReactivate" : on ? "previewRemove" : "previewAdd")} · ${content} · ${t("track")} ${k + 1} · ${t("previewStep")} ${index + 1}`;
+        cell.setAttribute("aria-label", description); cell.title = description + (k < mock.state.tracks.length - 1 ? " · " + t("previewDoubleClick") : "");
       }
     }
     for (const cell of group.querySelectorAll(".preview-seq-cell")) cell.classList.toggle("is-current", +cell.dataset.step === position);
@@ -5709,7 +5748,7 @@ function renderPreviewSequence() {
 $("preview-follow").addEventListener("change", renderPreviewSequence);
 function renderPreviewKeys() {
   if (!MOCK) return;
-  const drum = mock && mock.state.sel === 3;
+  const drum = mock && mock.state.sel === mock.state.tracks.length - 1;
   $("preview").dataset.instrument = drum ? "drums" : "keys";
   $("preview-instrument").textContent = `${t("track")} ${(mock?.state.sel || 0) + 1} · ${t(drum ? "previewDrums" : "previewKeys")}`;
   $("preview-octaves").hidden = !!drum || previewKeysHidden;
@@ -5781,7 +5820,7 @@ function releasePreviewKeys() {
 async function stopPreview() {
   releasePreviewKeys();
   previewPlaying = false;
-  previewPositions = [-1, -1, -1, -1];
+  previewPositions = new Array(FORK_TRACKS).fill(-1);
   if (mock) mock.sim.play(false);
   if (previewStarting) await previewStarting.catch(() => {});
   await localAudio?.close();
@@ -5798,8 +5837,8 @@ async function playPreview() {
 async function previewNoteOn(token, offset) {
   if (!dev?.dump || previewHeld.has(token)) return;
   const track = mock.state.sel;
-  const note = track === 3 ? DRUM_LANES[offset][0] : previewOctave + offset;
-  if (track < 3) { previewNotes[track] = note; renderPreviewSequence(); }
+  const note = track === mock.state.tracks.length - 1 ? DRUM_LANES[offset][0] : previewOctave + offset;
+  if (track < mock.state.tracks.length - 1) { previewNotes[track] = note; renderPreviewSequence(); }
   const held = { track, note };
   previewHeld.set(token, held);
   if (await startPreview() && previewHeld.get(token) === held) {
@@ -5906,9 +5945,9 @@ const stepEdit = new Map(); /* index -> time of the last edit */
 
 /* parameter ids (firmware/src/core.h); used only when P_COUNT / G_COUNT match */
 /* pcount 71 / pe0 63: 2.6's INSERT, filter TYPE, ENV SYNC, LFO 2 (P_ITYPE 53 .. P_LPOL 62, after Felucca 1.4 / 1.5) */
-const EXPECT = { pcount: [61, 71], gcount: [32, 33, 45, 46, 47, 48, 49, 50], pe0: [53, 63] };   /* gcount 33: 2.5's drum DLY (G_DRDLY); 45: 2.6's GLO > MIDI, TEXTURE, BEND; 46: 2.7's FX CH; 47: DR MAP; 48: REMOTE; 49: CLK OUT; 50: 2.7.2's FX FADE */
+const EXPECT = { pcount: [61, 71], gcount: [32, 33, 45, 46, 47, 48, 49, 50, 52, 56], pe0: [53, 63] };   /* gcount 33: 2.5's drum DLY (G_DRDLY); 45: 2.6's GLO > MIDI, TEXTURE, BEND; 46: 2.7's FX CH; 47: DR MAP; 48: REMOTE; 49: CLK OUT; 50: 2.7.2's FX FADE */
 const P = { LEVEL: 0, SLEN: 29, CHORD: 49 };
-const LAYOUT = (pe0) => {
+const LAYOUT = (pe0, ntrk = 4, gcount = 50) => {
   const v251 = pe0 >= 63;                         /* (2.6: the pages the device has for the new parameters) */
   const opt = (yes, ...pages) => (yes ? pages : []);
   return [
@@ -5922,16 +5961,17 @@ const LAYOUT = (pe0) => {
     { t: "SEL", pages: [["SEL", 0, [25, 26, 27, 49]], ["SEL 2", 0, [28, 51, 52]]] },
     { t: "ARP", pages: [["ARP", 0, [17, 18, 19, 20]], ["ARP 2", 0, [21, 22, 23, 24]]] },
     { t: "SEQ PATTERN", tab: "seqgroups", pages: [["PATTERN", 0, [29, 30, 31, 32]]] },
-    { t: "GLOBAL", tab: "setgroups", pages: [["GLOBAL", 1, [0, 1, 2, 3]]] },
+    { t: "GLOBAL", tab: "setgroups", pages: [["GLOBAL", 1, [0, 1, 2, 3]], ["SYNC", 1, [13]]] },
     { t: "MASTER", tab: "setgroups", pages: [["MASTER", 1, [27, 28, 29, 30]]] },
     { t: "DRUMS", tab: "setgroups", pages: [["DRUMS", 1, [24, 25, 26, 32]]] },
-    ...opt(v251, { t: "MIDI", tab: "setgroups", pages: [["MIDI", 1, [33, 34, 35, 24]], ["MIDI 2", 1, [14, 36, 12, 44]], ["MIDI 3", 1, [45, 46, 47, 48]]] }),   /* CH1 CH2 CH3 CH4 (drums);
+    ...opt(v251, { t: "MIDI", tab: "setgroups", pages: [["MIDI", 1, midiTrackIds(ntrk)], ["MIDI 2", 1, [14, 36, 12, 44]], ["MIDI 3", 1, [45, 46, 47, 48]]] }),   /* CH1 CH2 CH3 CH4 (drums);
                                                      * IN OTHER OUT BEND (settings of the FM-1; IN and OUT: the FM-1 only, G_SKIP) */
+    ...opt(gcount >= 56, { t: "DAW", tab: "setgroups", pages: [["DAW", 1, [52, 53, 54, 55]]] }),
     ...opt(v251, { t: "TEXTURE", tab: "setgroups", pages: [["TEXTURE", 1, [37, 38, 39, 40]], ["TEXTURE 2", 1, [41, 42, 43]]] }),   /* the bed */
   ];
 };
 /* globals that are actions or placeholders on the device: buttons instead, or hidden */
-const G_SKIP = new Set(["SLOT", "SECT", "NAME", "LOAD", "SAVE", "ENG", "SET", "CLRSQ", "INIT", "MIDI", "OUT", "SYNC", "ROUT", "IN", "CPU", "NEW"]);
+const G_SKIP = new Set(["SLOT", "SECT", "NAME", "LOAD", "SAVE", "ENG", "SET", "CLRSQ", "INIT", "CPU", "NEW"]);
 const key = (s, id) => s + ":" + id;
 const gEng = () => { const i = dev.gdesc.findIndex((d) => d && d.label === "ENG"); return i >= 0 ? i : 20; };
 const pSlen = () => { const i = dev.pdesc.findIndex((d) => d && d.fmt === F.STEPS); return i >= 0 ? i : P.SLEN; };
@@ -5951,7 +5991,7 @@ async function connect() {
   sayK("connecting");
   try {
     if (!access) {
-      if (MOCK) { mock = makeMockDevice({ auto: false, legacy: QS.get("legacy") === "1", onChange: previewChanged }); access = mock.access; }
+      if (MOCK) { mock = makeMockDevice({ ntrk: FORK_TRACKS, auto: false, legacy: QS.get("legacy") === "1", onChange: previewChanged }); access = mock.access; }
       else {
         try { access = await navigator.requestMIDIAccess({ sysex: true }); }
         catch (e) { sayK("denied"); return; }
@@ -6153,13 +6193,14 @@ function buildUI() {
 /* the track selector (v3): T1..T3 synth parts, T4 the drum track; the editor shows the selected one */
 /* the device's track colours (ui_studio.c TE_COL): the selected one is the editor's accent (--trk) */
 const TCOL = ["var(--t1)", "var(--t2)", "var(--t3)", "var(--t4)"];
+const trackColor = (i) => (dev?.info.ntrk === FORK_TRACKS ? [...TCOL.slice(0, 3), "#b580ff", "#29cbd1", TCOL[3]] : TCOL)[i] || TCOL[0];
 function renderTrackbar() {
   renderPreviewKeys();
   const box = $("trackbtns");
   const ntrk = hasTracks() ? dev.info.ntrk : 0;
   if (box.children.length !== ntrk || box.dataset.lang !== lang) {
     box.dataset.lang = lang;
-    box.replaceChildren(...Array.from({ length: ntrk }, (_, i) => el("button", { type: "button", "data-i": i, style: `--c:${TCOL[i % 4]}`,
+    box.replaceChildren(...Array.from({ length: ntrk }, (_, i) => el("button", { type: "button", "data-i": i, style: `--c:${trackColor(i)}`,
       onclick: () => selectTrack(i) }, el("span", { class: "no", text: String(i + 1) }), el("span", { class: "nm" }))));
   }
   for (const b of box.children) {
@@ -6170,7 +6211,7 @@ function renderTrackbar() {
     b.lastChild.replaceChildren(nm[0] + " ", el("span", { class: "dim", text: nm[1] }));
     b.title = `${t("track")} ${i + 1}`;
   }
-  document.documentElement.style.setProperty("--trk", TCOL[(dev.sel || 0) % 4]);
+  document.documentElement.style.setProperty("--trk", trackColor(dev.sel || 0));
   renderPreview();
 }
 function selectTrack(i) {
@@ -6247,7 +6288,7 @@ function drumPanel(drum) {
 async function drumPanelRead() {
   if (!dev || !dev.info || dev.info.proto < 12) return;
   if (DP.s && (!dev.link.idle || [...DP.local.values()].some((v) => performance.now() - v.t < DP_HOLD))) return;   /* (not while turning) */
-  try { DP.s = drumPanelMerge(parse[CMD.LIVE](await rq(req.live(LIVE.STATE), { key: "live:state", retries: 0, quiet: true }))); } catch (e) { return; }
+  try { DP.s = drumPanelMerge(parse[CMD.LIVE](await rq(req.live(LIVE.STATE), { key: "live:state", retries: 0, quiet: true }), dev.info)); } catch (e) { return; }
   drumPanelRender();
 }
 function drumPanelBuild() {
@@ -6312,7 +6353,7 @@ async function drumPanelTw(lane) {
   const d = DP.s.dtw[lane];
   drumPanelRender();
   /* one request a pad in the queue (key): while one is on its way, the moves after it become the next one */
-  try { DP.s = drumPanelMerge(parse[CMD.LIVE](await rq(req.live(LIVE.DRUM_TW, lane, d.tune + 8, d.dec + 4), { key: "dtw:" + lane, front: true }))); }
+  try { DP.s = drumPanelMerge(parse[CMD.LIVE](await rq(req.live(LIVE.DRUM_TW, lane, d.tune + 8, d.dec + 4), { key: "dtw:" + lane, front: true }), dev.info)); }
   catch (e) { report(e); }
   drumPanelRender();
 }
@@ -6350,7 +6391,7 @@ function buildGroups() {
   const { info } = dev;
   const known = EXPECT.pcount.indexOf(info.pcount);
   if (known >= 0 && EXPECT.gcount.includes(info.gcount) && info.pe0 === EXPECT.pe0[known]) {
-    for (const g of LAYOUT(info.pe0)) {
+    for (const g of LAYOUT(info.pe0, info.ntrk, info.gcount)) {
       /* a card per button of the device (ENV, LFO, EDIT ...), its pages as rows of four knobs, one colour per knob */
       const div = el("div", { class: "group" }, el("h2", { ic: HEAD_IC[g.t] },
         g.engine ? `EDIT ${info.engines[dev.dump.engine] || ""}` : g.t));
@@ -7852,7 +7893,7 @@ function renderSamples() {
       } });
     u.prog = el("progress", { max: 1, value: 0, hidden: true });
     u.send = el("button", { class: "pri", ic: "symbol_upload", onclick: smpSendPage });
-    u.play = el("div", { class: "seg" }, ...[0, 1, 2].map((i) => el("button", { type: "button", "data-i": i, style: `--c:${TCOL[i]}`, class: "trk",
+    u.play = el("div", { class: "seg" }, ...Array.from({ length: (dev.info.ntrk || 4) - 1 }, (_, i) => el("button", { type: "button", "data-i": i, style: `--c:${trackColor(i)}`, class: "trk",
       onclick: () => smpUseOn(i, P.slot) }, `${t("track")} ${i + 1}`)));
     u.where = el("p", { class: "dim" });
     box.replaceChildren(el("div", { class: "card" },
@@ -7918,7 +7959,7 @@ function renderSamples() {
       const play = el("button", { type: "button", title: t(f.loop ? "smpHoldPlay" : "kitPlay") }, "▶");
       if (f.loop) holdToPlay(play, () => { const [a, b] = LOOP.range(f); playLoop(withGain(f.s, f.gain), a, b); });
       else play.addEventListener("click", () => playInt16(withGain(f.s, f.gain)));
-      const row = el("div", { class: "frow", style: `--c:${TCOL[i % 4]}` },
+      const row = el("div", { class: "frow", style: `--c:${trackColor(i)}` },
         play,
         el("span", { class: "fn", text: f.fname, title: f.fname }), root,
         el("span", { text: `${noteName(keys[i][0])}–${noteName(keys[i][1])}` }),
@@ -7946,7 +7987,7 @@ function renderSamples() {
       };
       requestAnimationFrame(() => drawLoopWave(cv, f));
       return el("div", { class: "floopbox" }, row,
-        el("div", { class: "floop", style: `--c:${TCOL[i % 4]}` }, cv, mk("smpLoopStart", 0), mk("smpLoopEnd", 1),
+        el("div", { class: "floop", style: `--c:${trackColor(i)}` }, cv, mk("smpLoopStart", 0), mk("smpLoopEnd", 1),
           el("span", { class: "dim", text: t("smpLoopTail") })));
     }));
   if (d.files.length) requestAnimationFrame(() => drawKeymap(u.keymap, d.files, keys));
@@ -8841,7 +8882,7 @@ function buildStrip(i) {
     panOut: el("span", { class: "v" }),
     selb: el("button", { type: "button", class: "selb", onclick: () => selectTrack(i) }),
   };
-  c.strip = el("div", { class: "strip", role: "group", style: `--c:${TCOL[i % 4]}`, "aria-label": `${t("track")} ${i + 1}` },
+  c.strip = el("div", { class: "strip", role: "group", style: `--c:${trackColor(i)}`, "aria-label": `${t("track")} ${i + 1}` },
     c.num, c.snd, c.rec, c.solo, fader, c.lvOut, c.mute, el("span", { class: "v dim", ic: "symbol_pan" }, t("pan")), pan, c.panOut, c.selb);
   mixCtl[i] = c;
   return c.strip;
@@ -9759,8 +9800,7 @@ $("bk-save").addEventListener("click", () => op(async () => {
 $("bk-load").addEventListener("click", () => { if (dev) $("bk-file").click(); });
 /* (2.7) a song as one file: export it; load one (also from the LIVE page's playlist: lvSongLoad) */
 async function songExport() {
-  const name = prompt(t("sfName"), "SONG " + today());
-  if (name == null) return;
+  const name = $("sf-name").value.trim() || "PROJECT " + today();
   await op(async () => {
     try {
       const f = await songCapture(rq, dev.info, name.trim() || "SONG", bkProgress("sfSaving"));
@@ -9936,7 +9976,7 @@ const lvGany = (label, def) => { const i = dev.gdesc.findIndex((d) => d && d.lab
 const LVP = () => ({ pan: lvP("PAN", 39), filt: lvP("FILT", 50), rev: lvP("REV", 36), dly: lvP("DLY", 35), cho: lvP("CHO", 34), dst: lvP("DST", 33),
   mode: lvP("MODE", 17), hold: lvP("HOLD", 23), mute: lvP("MUTE", 40) });
 const LVG = () => ({ bpm: lvGany("BPM", 0), swing: lvGany("SWING", 1), filt: lvG("FILT", 29), dust: lvG("DUST", 27), duck: lvG("DUCK", 28),
-  drRev: lvG("REV", 26), drDly: lvG("DLY", 32), ch: [lvG("CH1", 33), lvG("CH2", 34), lvG("CH3", 35)], drCh: lvG("CH4", 24),
+  drRev: lvG("REV", 26), drDly: lvG("DLY", 32), ch: midiTrackIds(dev.info.ntrk).slice(0, -1), drCh: 24, daw: dev.info.gcount >= 56 ? 52 : -1,
   other: lvG("OTHER", 36), route: lvGany("IN", 14), fxCh: lvG("FX CH", 45), drMap: lvG("DR MAP", 46), remote: lvG("REMOTE", 47) });
 const lvDrum = (i) => i === (dev && dev.info ? dev.info.ntrk || 4 : 4) - 1;
 const lvGv = (id) => (dev && dev.dump ? dev.dump.g[id] : 0);
@@ -9945,7 +9985,7 @@ const lvGv = (id) => (dev && dev.dump ? dev.dump.g[id] : 0);
 async function lvSend(op, ...a) {
   if (!lvOk()) return null;
   try {
-    const s = parse[CMD.LIVE](await rq(req.live(op, ...a), { front: true, retries: 0 }));
+    const s = parse[CMD.LIVE](await rq(req.live(op, ...a), { front: true, retries: 0 }), dev.info);
     lvApply(s);
     return s;
   } catch (e) { report(e); return null; }
@@ -9959,7 +9999,7 @@ async function lvPoll() {
   if (!d || !d.dump || tab !== "live" || document.hidden || LV.polling || LV.pl.loading) return;
   LV.polling = true;
   try {
-    if (lvOk()) lvApply(parse[CMD.LIVE](await rq(req.live(LIVE.STATE), { key: "live:state", retries: 0, quiet: true })));
+    if (lvOk()) lvApply(parse[CMD.LIVE](await rq(req.live(LIVE.STATE), { key: "live:state", retries: 0, quiet: true }), dev.info));
     else if (Date.now() - LV.at > 600) { LV.at = Date.now(); await lvReadTracks(false); }
     if (d === dev && Date.now() - LV.dump > 1500) {   /* one track's sound a time: what the FM-1 changed shows */
       LV.dump = Date.now();
@@ -10169,7 +10209,7 @@ async function lvSolo(i) {
   if (!lvOk()) return;
   LV.solo ^= 1 << i;
   lvRenderStrip(i);
-  await lvTap(LIVE.LY_MIX, LIVE.SOLO + i);
+  await lvTap(LIVE.LY_MIX, mixKeys(dev.info.ntrk).solo + i);
 }
 /* the keys play this track: it is selected on the FM-1 too (REC records it; OTHER = SEL channels reach it) */
 async function lvTarget(i) {
@@ -10199,11 +10239,13 @@ async function lvSound(i, e, p) {         /* a sound for track i (PRESET acts on
 /* ---- notes: plain MIDI on the track's channel; the drum track: its 16 sounds as GM notes, or 36.. with DR MAP 1-16 */
 function lvChan(i) {
   const g = LVG(), route = lvGv(g.route);
-  if (route === 1) return { err: "lvClock" };
-  if (route >= 2) return { ch: route - 2 };      /* IN = CH n: that channel, on the selected track */
+  const daw = g.daw >= 0 ? lvGv(g.daw) : 0;
+  if (daw === 2) return { err: "lvCapture" };
+  if (!daw && route === 1) return { err: "lvClock" };
+  if (!daw && route >= 2) return { ch: route - 2 };      /* IN = CH n: that channel, on the selected track */
   const own = lvDrum(i) ? lvGv(g.drCh) : lvGv(g.ch[i]);
   if (own) return { ch: own - 1 };
-  if (lvGv(g.other)) return { err: "lvNoChan" };  /* OTHER = OFF */
+  if (daw || lvGv(g.other)) return { err: "lvNoChan" };  /* OTHER = OFF */
   const used = new Set([...g.ch.map(lvGv), lvGv(g.drCh), lvGv(g.fxCh), lvGv(g.remote)].filter(Boolean).map((c) => c - 1));
   for (let c = 15; c >= 0; c--) if (!used.has(c)) return { ch: c, sel: true };   /* a free channel plays the selected track */
   return { err: "lvNoChan" };
@@ -10260,7 +10302,7 @@ function lvFx(fx, on) {
 const LV_FX_GROUPS = [["lvFxLoops", [0, 1, 2, 3, 24, 4, 5, 6, 7, 19, 23]], ["lvFxTone", [8, 9, 16, 17, 18, 10]],
   ["lvFxColour", [11, 12, 20, 21, 14]], ["lvFxMove", [13, 15, 22, 25, 26]]];
 
-/* ---- (2.7) the playlist: song files (Song & sections → Export this song), loaded one after the other. A song loads
+/* ---- (2.7) the playlist: song files (Projects → Export project), loaded one after the other. A song loads
    with the FM-1 stopped (a few seconds of flash), then plays if "play when loaded" is on. The list is kept in this
    browser (IndexedDB), and saved / opened as one file to take to a gig */
 const PLF = { FORMAT: "sloop-playlist", VERSION: 1 };
@@ -10411,8 +10453,8 @@ function lvBuild() {
   U.song = el("button", { type: "button", class: "tog", "data-lvm": "song", onclick: () => { if (!LV.s || !LV.s.songMode) lvTap(LIVE.LY_SONG, LIVE.SONG); }, text: t("lvSong") });
   U.srec = el("button", { type: "button", class: "tog", "data-lvm": "songrec", onclick: () => lvTap(LIVE.LY_SONG, LIVE.SONG_REC), text: t("lvSongRec") });
   U.fill = lvHold(el("button", { type: "button", class: "lvfill", "data-lvm": "fill" }, el("b", { text: t("lvFill") }), el("small", { text: t("lvFillHold") })),
-    () => lvKey(LIVE.LY_MIX, LIVE.FILL, true), () => lvKey(LIVE.LY_MIX, LIVE.FILL, false));
-  U.fillbar = el("button", { type: "button", class: "tog", "data-lvm": "fillbar", onclick: () => lvTap(LIVE.LY_MIX, LIVE.FILL_BAR), text: t("lvFillBar") });
+    () => lvKey(LIVE.LY_MIX, mixKeys(dev.info.ntrk).fill, true), () => lvKey(LIVE.LY_MIX, mixKeys(dev.info.ntrk).fill, false));
+  U.fillbar = el("button", { type: "button", class: "tog", "data-lvm": "fillbar", onclick: () => lvTap(LIVE.LY_MIX, mixKeys(dev.info.ntrk).fillBar), text: t("lvFillBar") });
   U.cpu = el("span", { class: "lvcpu dim" });
   U.full = el("button", { type: "button", class: "lvfull", onclick: lvFull });
   U.panic = el("button", { type: "button", class: "warn", "data-lvm": "panic", onclick: () => { lvAllOff(); if (LV.s && LV.s.fx >= 0) lvSend(LIVE.FX, LV.s.fx, 0); }, text: t("lvPanic") });
@@ -10481,7 +10523,7 @@ function lvBuild() {
   const fxBox = el("div", { class: "card lvcard lvfxbox" }, el("div", { class: "lvhead" }, el("h2", { text: t("lvFx") }), U.latch),
     el("p", { class: "dim lvhint", text: t("lvFxHint") }), ...groups);
   /* the keys */
-  U.targets = [0, 1, 2, 3].slice(0, n).map((i) => el("button", { type: "button", class: "tog", style: `--trk:${TCOL[i]}`, text: lvDrum(i) ? "D" : String(i + 1), onclick: () => lvTarget(i) }));
+  U.targets = Array.from({ length: n }, (_, i) => i).map((i) => el("button", { type: "button", class: "tog", style: `--trk:${trackColor(i)}`, text: lvDrum(i) ? "D" : String(i + 1), onclick: () => lvTarget(i) }));
   U.octDn = el("button", { type: "button", text: "−", "aria-label": t("lvOct") + " −", onclick: () => { LV.oct = Math.max(1, LV.oct - 1); lvRenderPlay(); } });
   U.octUp = el("button", { type: "button", text: "+", "aria-label": t("lvOct") + " +", onclick: () => { LV.oct = Math.min(7, LV.oct + 1); lvRenderPlay(); } });
   U.octV = el("span", { class: "lvoct" });
@@ -10560,7 +10602,7 @@ function lvStrip(i) {
   s.knobs = drum
     ? [kn(t("lsFilt"), P.filt, true), kn(t("lsPan"), P.pan, true), kn(t("lsRev"), g.drRev, false, true), kn(t("lsDly"), g.drDly, false, true)]
     : [kn(t("lsFilt"), P.filt, true), kn(t("lsPan"), P.pan, true), kn(t("lsRev"), P.rev), kn(t("lsDly"), P.dly), kn(t("lsCho"), P.cho), kn(t("lsDrv"), P.dst)];
-  s.node = el("div", { class: "lstrip" + (drum ? " drum" : ""), style: `--c:${TCOL[i % 4]}`, role: "group", "aria-label": `${t("lvTrack")} ${i + 1}` },
+  s.node = el("div", { class: "lstrip" + (drum ? " drum" : ""), style: `--c:${trackColor(i)}`, role: "group", "aria-label": `${t("lvTrack")} ${i + 1}` },
     el("div", { class: "lshead" }, el("span", { class: "lsnum", text: drum ? "D" : String(i + 1) }), s.name, drum ? "" : s.fav),
     el("div", { class: "lssnd" }, s.prev, s.sound, s.next), s.prog,
     el("div", { class: "lsbody" }, s.fader, el("div", { class: "lsknobs" }, ...s.knobs)),
@@ -10681,8 +10723,8 @@ function lvRenderPlay() {
   U.lvls.forEach((b, k) => b.setAttribute("aria-pressed", String(k === LV.dlv)));
   U.octV.textContent = `C${LV.oct}–C${LV.oct + 2}`;
   U.vel.style.setProperty("--p", (LV.vel / 127 * 100).toFixed(1) + "%");
-  U.keys.style.setProperty("--trk", TCOL[LV.target % 4]);
-  U.pads.style.setProperty("--trk", TCOL[3]);
+  U.keys.style.setProperty("--trk", trackColor(LV.target));
+  U.pads.style.setProperty("--trk", trackColor(dev.info.ntrk - 1));
   const md = dev.pdesc[P.mode];
   if (md && md.names && U.arp.options.length !== md.names.length) U.arp.replaceChildren(...md.names.map((n, k) => el("option", { value: String(k), text: n })));
   if (!drum && document.activeElement !== U.arp) U.arp.value = String(o.p[P.mode] ?? 0);
@@ -10996,7 +11038,7 @@ function lvxBuildPerf() {
   const i = LV.target, drum = lvDrum(i), o = LV.tr[i] || { p: [] }, pd = (id) => dev.pdesc[id], gd = (id) => dev.gdesc[id];
   U.perfTabs.forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === LVS.tab)));
   U.perfTrk.textContent = drum ? "DRUMS" : `${t("lvTrack")} ${i + 1} · ${dev.info.engines[o.engine] || ""}`;
-  U.perf.style.setProperty("--c", TCOL[i % 4]);
+  U.perf.style.setProperty("--c", trackColor(i));
   const ctls = [];
   const row = (title, list) => { const xs = list.filter(Boolean); ctls.push(...xs); return xs.length ? el("div", { class: "lvxgrp" }, el("span", { class: "dim", text: t(title) }), el("div", { class: "lvknobs" }, ...xs)) : ""; };
   let body = [];
@@ -11486,9 +11528,17 @@ function livePush(f) {
 const lvEditing = (e) => e.target.closest("input:not([type=range]), select, textarea, [contenteditable='true']");
 const lvDown = new Map();                  /* e.code -> what its keyup ends */
 window.addEventListener("keydown", (e) => {
-  if (tab !== "live" || !dev || !dev.dump || e.ctrlKey || e.metaKey || e.altKey || lvEditing(e)) return;
+  if (tab !== "live" || !dev || !dev.dump || e.ctrlKey || e.metaKey || lvEditing(e)) return;
   if (e.repeat) { if (lvDown.has(e.code) || e.code === "Space") e.preventDefault(); return; }
   const k = e.key.toLowerCase(), digit = /^Digit(\d)$/.exec(e.code), li = LV_KEYS.indexOf(k);
+  if (e.altKey) {
+    const i = digit ? +digit[1] - 1 : -1;
+    if (i >= 0 && i < LV.tr.length) {
+      e.preventDefault();
+      if (e.shiftKey) lvSolo(i); else lvMute(i, !LV.tr[i].mute);
+    }
+    return;
+  }
   let up = null;
   const fk = /^F([1-8])$/.exec(e.key);
   if (fk) { const k = +fk[1] - 1; if (e.shiftKey) lvxStore(k); else lvxRecall(k); }   /* LIVE pro: scenes (Shift: store) */
@@ -11497,8 +11547,8 @@ window.addEventListener("keydown", (e) => {
     const d = +digit[1];
     if (d >= 1 && d <= 4) lvTap(LIVE.LY_SONG, LIVE.SEC + d - 1);
     else if (d >= 5 && d <= 8) { if (e.shiftKey) lvSolo(d - 5); else if (LV.tr[d - 5]) lvMute(d - 5, !LV.tr[d - 5].mute); }
-    else if (d === 9) { lvKey(LIVE.LY_MIX, LIVE.FILL, true); up = () => lvKey(LIVE.LY_MIX, LIVE.FILL, false); }
-    else if (d === 0) lvTap(LIVE.LY_MIX, LIVE.FILL_BAR);
+    else if (d === 9) { lvKey(LIVE.LY_MIX, mixKeys(dev.info.ntrk).fill, true); up = () => lvKey(LIVE.LY_MIX, mixKeys(dev.info.ntrk).fill, false); }
+    else if (d === 0) lvTap(LIVE.LY_MIX, mixKeys(dev.info.ntrk).fillBar);
   } else if (k === "b") lvTap(LIVE.LY_MIX, LIVE.TAP);
   else if (k === "c") lvSend(LIVE.REC);
   else if (k === "n") lvSongNext();

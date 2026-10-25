@@ -159,7 +159,7 @@ UI_SMALL static void fm1_fault(const fm1_crash_t *c)
     fm1_reboot();
 }
 
-/* power-on: three parts with their default sounds (TRK_DEF), the drum track, empty patterns */
+/* power-on: synth parts with their default sounds (TRK_DEF), the drum track, empty patterns */
 UI_SMALL static void felucca_init(void)
 {
     uint32_t i;
@@ -183,13 +183,8 @@ UI_SMALL static void felucca_init(void)
     song.g[G_SYNC] = (int16_t)lights_sync;    /* a setting of the FM-1 (panel.c) */
     song.g[G_MIDI] = (int16_t)lights_mout;
     song.g[G_ROUTE] = (int16_t)lights_min;
-    song.g[G_CH1] = midi_set[0], song.g[G_CH2] = midi_set[1], song.g[G_CH3] = midi_set[2];   /* (2.6: GLO > MIDI, */
-    song.g[G_DRCH] = midi_set[3], song.g[G_CHOTH] = midi_set[4], song.g[G_BEND] = midi_set[5];
-    song.g[G_FXCH] = midi_set[6];
-    song.g[G_DRMAP] = midi_set[7];                   /* (2.7) GLO > MIDI 3: DR MAP */
-    song.g[G_CLKOUT] = midi_set[9];                  /* (2.7) GLO > MIDI 3: CLK OUT */
-    song.g[G_RMCH] = midi_set[8];                    /* (2.7) GLO > MIDI 3: REMOTE */
-    song.g[G_CH4] = midi_set[10], song.g[G_CH5] = midi_set[11];   /* sloop-peeeo: tracks 4 and 5 */
+    for (i = 0; i < sizeof MIDI_SET_ID; i++)
+        song.g[MIDI_SET_ID[i]] = midi_set[i];
     song.g[G_FXFADE] = fxfade;                        /* (2.7.2) GLO > MASTER 2: the punch-in FX fade */                    /* (2.7) GLO > MIDI 3: FX CH */   /* settings of the FM-1) */
     layers_init();                            /* the panel's layer buttons for the keys (ui_layers.c) */
     go_home();

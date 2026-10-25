@@ -507,8 +507,11 @@ UI_SMALL static void layer_knobs(uint32_t layer)
                 song.g[G_DUST] = (int16_t)clamp(song.g[G_DUST] + accel(EN_K2, s, 127), 0, 127);
             else if (k == 2u)
                 song.g[G_DUCK] = (int16_t)clamp(song.g[G_DUCK] + accel(EN_K3, s, 127), 0, 127);
-            else                                        /* the selected track's FILTER (2.4) */
-                t->p[P_TFLT] = (int16_t)clamp(t->p[P_TFLT] + accel(EN_K4, s, 127), -64, 63);
+            else {                                      /* the selected track's FILTER */
+                int32_t old = t->p[P_TFLT];
+                t->p[P_TFLT] = (int16_t)clamp(old + accel(EN_K4, s, 127), -64, 63);
+                midi_cc_local(t, P_TFLT, old, t->p[P_TFLT]);
+            }
             break;
         case LY_ERASE:
             if (k == 0u)
@@ -564,7 +567,9 @@ UI_SMALL static void layer_knobs(uint32_t layer)
         case LY_MIX: {
             uint32_t tk = trk_view_top() + k;           /* (sloop-peeeo: the four tracks in view on TRACKS) */
             int16_t *lv = tk == TRK_DRUM ? &song.g[G_DRLVL] : &trk[tk].p[P_LEVEL];
-            *lv = (int16_t)clamp(*lv + accel(EN_K1 + k, s, 127), 0, 127);
+            int32_t old = *lv;
+            *lv = (int16_t)clamp(old + accel(EN_K1 + k, s, 127), 0, 127);
+            midi_cc_local(&trk[tk], P_LEVEL, old, *lv);
             break;
         }
         default:

@@ -720,13 +720,13 @@ Tap a button to open its first page (or the last one you used); **tap it again**
 | **GLO** | **GLOBAL** | BPM 40–240 | SWING (all tracks) | CLICK: OFF, REC, ON | TUNE ±50 cents |
 | | **MASTER** | DUST | DUCK | FILT (DJ filter) | ROLL (note-repeat rate) |
 | | **SYSTEM** | OUT (MIDI out): KEYS / SEQ (also on MIDI 2) | SYNC: INT, USB, TRS | IN: NOTES / CLOCK / CH 1–16 (also on MIDI 2) | CPU load (USB link state when no computer is connected) |
-| | **DRUMS** | DRUM: the drum track's MIDI channel (OFF, 1–16, default 10; the same setting as GLO → MIDI CH → DRUM; 2.6: a setting of the FM-1) | LVL drum level | REV drum reverb | DLY drum delay (2.5): the drums into the tempo delay (FX → DLY sets its time, feedback and tone), saved with the project |
+| | **DRUMS** | DRUM: the drum track's MIDI channel (OFF, 1–16, default 10; the same setting as GLO → MIDI → track 6; 2.6: a setting of the FM-1) | LVL drum level | REV drum reverb | DLY drum delay (2.5): the drums into the tempo delay (FX → DLY sets its time, feedback and tone), saved with the project |
 | | **TEXTURE** (2.6) | SRC: OFF, VINYL, TAPE, RAIN, WIND, RADIO, ROOM, USR1–4 | LEVEL | TONE (LP ← OFF → HP) | MOVE |
 | | **TEXTURE 2** (2.6) | RATE: 1–16 bars | WHEN: PLAY / ALWAYS | DUCK: OFF / ON | — |
-| | **MIDI** (2.6) | CH1: track 1's MIDI channel (OFF, 1–16) | CH2: track 2's | CH3: track 3's | CH4: track 4's (default 4) |
-| | **MIDI CH** | CH5: track 5's (default 5) | DRUM: the drum track's (default 10) | — | — |
+| | **MIDI** | channel of visible row 1 | row 2 | row 3 | row 4; ALGORITHM scrolls the six-track list |
 | | **MIDI 2** (2.6) | IN: NOTES / CLOCK / CH 1–16 | OTHER: the channels no track has: SEL (the selected track) / OFF | OUT: KEYS / SEQ | BEND: the pitch bend's range, 1–12 semitones |
 | | **MIDI 3** (2.7) | FX CH: the punch-in effects' MIDI channel (OFF, 1–16) | DR MAP: how MIDI notes play the drums (GM / 1-16) | REMOTE: the buttons over MIDI (OFF, 1–16) | CLOCK: OUT, the MIDI clock and START / STOP out on USB (OFF / OUT) |
+| | **DAW** (6T7) | MODE: STAND / DAW / CAPT | CCOUT: local knob automation OFF/ON | SPP: follow song position OFF/ON | LOST: RUN / HOLD / STOP; [Live setup](docs/live-integration.md) |
 | **SAVE** | **PRESETS** | the sound | the engine | — | — |
 | | **USER** | SLOT 1–32 | LOAD (GO) | ERASE (GO) | SAVE (GO) |
 | | **PROJECT** | SLOT 1–4 | ERASE (GO) | LOAD (GO) | SAVE (GO) |
@@ -922,8 +922,8 @@ The visualiser sees the mix **as if MASTER were all the way up**: with MASTER tu
 
 - **TRACKS** shows four rows at a time; the list scrolls so the selected track is always in view (the thin bar on the right shows where you are). The REC screen does the same with the track you record.
 - **GLO** (held): keys 1–6 mute tracks 1–6, keys 7–12 solo them, key 13 a fill, key 14 a fill bar, key 16 tap tempo. KNOB 1–4 set the levels of the four tracks in view on TRACKS.
-- **MIDI:** tracks 4 and 5 have their own channels, CH4 and CH5 (GLO → MIDI and MIDI CH; defaults 4 and 5); the drums' channel is DRUM (default 10).
-- **MIDI LEARN** works on tracks 1–3 and the drums (the screen says so on tracks 4 and 5).
+- **MIDI:** tracks 4 and 5 have their own channels, CH4 and CH5 (GLO → MIDI; defaults 4 and 5); the drums' channel is DRUM (default 10).
+- **MIDI LEARN** works on all six tracks. Existing learned controls for the old drum track follow it to track 6.
 - **Projects and sections** keep all six tracks, packed: only the steps you use are stored, about 240 steps over the six tracks. A project too dense to keep says **PROJECT FULL** and the slot keeps what it had. Projects of SLOOP 2.8 and older load with the drums on track 6 and tracks 4 and 5 empty. (Going back to SLOOP, sections saved here read as empty.)
 - The visualisers that draw one shape per track (VU METERS, BOUNCE, ORBIT, WIRES, LCD, SLOOP) show tracks 1–3 and the drums. The web editor does not know six tracks yet: do not use it with this build.
 
@@ -1003,22 +1003,25 @@ Both work at once.
 
 ### All the MIDI settings: GLO → MIDI, MIDI 2 (2.6) and MIDI 3 (2.7)
 
+GLO → **MIDI** shows all six tracks in a scrolling list, with the same four-row window as TRACKS. **ALGORITHM** selects a track and keeps it visible; **KNOB 1–4** edit the channels of the four visible rows. At the bottom of the list those rows are tracks 3, 4, 5 and 6 (drums), with default channels 3, 4, 5 and 10. **SELECT** continues to move between GLO pages.
+
 Every MIDI setting is on these pages of GLO (tap GLO until **MIDI**). They are settings of the FM-1: kept through power-off, not changed by a project, and in the web editor's backups.
 
 | Page | KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
 | --- | --- | --- | --- | --- |
-| **MIDI**: which channel each track uses, in and out | **CH1** track 1 (default 1) | **CH2** track 2 (2) | **CH3** track 3 (3) | **CH4** track 4 (4) |
-| **MIDI CH**: the last two tracks' channels | **CH5** track 5 (5) | **DRUM** the drum track (10) | — | — |
+| **MIDI**: channels in and out; scroll with ALGORITHM | visible row 1 | visible row 2 | visible row 3 | visible row 4 |
 | **MIDI 2**: how MIDI comes in and goes out | **IN** | **OTHER** | **OUT** | **BEND** |
 | **MIDI 3** (2.7): the punch-in effects, the drums, the buttons over MIDI, the clock out | **FX CH** | **DR MAP** | **REMOTE** | **CLOCK** |
 
-- **CH1–CH5, DRUM:** OFF or 1–16. A track's channel plays it (notes, CCs, sustain, pitch bend, Program Change) and its keys and sequence go out on it. **OFF**: nothing in, nothing out for that track. Two tracks never share a channel: turn a channel onto one another track has and it goes on to the next free one, and the screen says whose it was (*CH 3 = TRACK 3*). Changing a channel ends whatever was still sounding on it, here and on the other gear. CH4 is also on GLO → DRUMS (the same setting).
-- **IN:** **NOTES** (notes, CCs and the clock: normal) · **CLOCK** (only the clock and START / CONTINUE / STOP; every note and CC ignored, except the REMOTE CCs when REMOTE is on) · **CH 1 … CH 16** (only that one channel, always on the selected track; CH1–CH4 and OTHER are set aside, the clock still followed). Opening GLO → MIDI while IN is not NOTES says so on the screen (*IN CH 5: SEL TRK ONLY*, *IN = CLOCK: NO NOTES*).
+- **CH1–CH5, DRUM:** OFF or 1–16. A track's channel plays it (notes, CCs, sustain, pitch bend, Program Change) and its keys and sequence go out on it. **OFF**: nothing in, nothing out for that track. Two tracks never share a channel: turn a channel onto one another track has and it goes on to the next free one, and the screen says whose it was (*CH 3 = TRACK 3*). Changing a channel ends whatever was still sounding on it, here and on the other gear. DRUM is also on GLO → DRUMS (the same setting).
+- **IN:** **NOTES** (notes, CCs and the clock: normal) · **CLOCK** (only the clock and START / CONTINUE / STOP; every note and CC ignored, except the REMOTE CCs when REMOTE is on) · **CH 1 … CH 16** (only that one channel, always on the selected track; CH1–CH5, DRUM and OTHER are set aside, the clock still followed). Opening GLO → MIDI while IN is not NOTES says so on the screen (*IN CH 5: SEL TRK ONLY*, *IN = CLOCK: NO NOTES*).
 - **OTHER:** what a channel that no track has does: **SEL** plays the selected track (set your keyboard to channel 4 and it follows ALGORITHM) · **OFF** ignores it (a sequencer's channels for other gear on the same cable).
 - **OUT:** **KEYS** only what you play on the keys goes out · **SEQ** the sequencer, the arp and the rolls go out too.
 - **FX CH** (2.7): OFF (the default) or 1–16. On that channel the notes **F3 … G5** (MIDI 53–79) are the FM-1's 27 keys with **FX** held: a note held holds its [punch-in effect](#punch-in-effects), its release lets it go (white keys: effects 1–16, black keys: 17–27, as on the FM-1). A pad controller, a keyboard or a DAW can play and automate them. That channel only plays effects (choose one no track uses); it works with IN = NOTES or CH n, not with IN = CLOCK. A key of the FM-1 (FX + key) takes over at once.
 - <a id="dr-map"></a>**DR MAP** (2.7): how the notes reaching the drum track (on CH4, or on IN CH n with the drum track selected) pick the 16 drum sounds. **GM** (the default, as before): the General MIDI notes, for DAWs and MIDI files: 36 kick, 35 kick 2, 38 snare, 39 clap, 42 hat, 46 open hat, 44 pedal hat, 37 rim, 40 snare 2, 43 low tom, 48 high tom, 49 crash, 51 ride, 70 shaker, 63 conga, 56 cowbell (any other note plays the nearest of them). **1-16**: any 16 notes in a row play the 16 sounds in order, from note 36 (KICK, KICK 2, SNARE, CLAP, HAT, OPEN HAT, PEDAL, RIM, SNARE 2, LOW TOM, HI TOM, CRASH, RIDE, SHAKER, CONGA, COWBELL), and again every 16 notes: a keyboard or a row of pads plays the whole kit wherever it starts. What the drum track sends on MIDI OUT stays GM.
 - <a id="remote"></a>**REMOTE** (2.7): OFF (the default) or 1–16. On that channel, **CC 102 … 115** press the FM-1's 14 buttons from a controller or a DAW: a value of 64 or more holds the button down, below 64 lets it go (a controller's button sends 127 then 0: a tap; held: a hold). Everything works as on the panel: taps, holds and their layers, combinations (a button held + a key), OCT− / OCT+. CC 102 FX · 103 SEL · 104 ENV · 105 LFO · 106 EDIT · 107 GLO · 108 HOME · 109 SAVE · 110 ARP · 111 SEQ · 112 PLAY · 113 REC · 114 OCT− · 115 OCT+. Choose a channel no track uses; its other messages work as usual (notes, other CCs, MIDI LEARN).
+- **Sections from Live (PEEEO 6T8):** on the REMOTE channel, **CC119 values 0–3** request sections A–D. While playing a loop, the section changes on the next bar; while stopped, it loads without starting transport. Empty sections are ignored; a running SONG is not interrupted. STOP/SPP cancel queued requests. Program Change still selects sounds. The [Ableton companion guide](integrations/ableton/README.md) covers the templates and Max for Live sound snapshots.
+
 - <a id="clock-out"></a>**CLOCK** (2.7): OFF (the default) or **OUT**. OUT, the FM-1 is the **clock master** on USB: it sends the MIDI clock (24 pulses a beat, at its tempo, also while stopped so the other gear knows the tempo), **START** when its sequencer starts (after a count-in, when it starts) and **STOP** when it stops. A DAW, a drum machine or another groovebox set to follow MIDI clock then plays in time with SLOOP and starts and stops with it. It works with SYNC = INT only: a FM-1 that follows a clock (SYNC USB or TRS) never sends one (no loop through a computer). The FM-1's TRS jack is an input: the clock goes out on USB. A setting of the FM-1, kept through power-off.
 - **BEND:** the pitch bend's range, 1–12 semitones (default 2).
 

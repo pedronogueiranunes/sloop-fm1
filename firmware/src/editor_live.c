@@ -160,8 +160,8 @@ UI_SMALL static void ed_live(const uint8_t *a, uint32_t na)
     ed_b(chain_n);
     ed_b(chain_i);
     ed_b(m);
-    ed_b(song.solo & 15u);
-    ed_b(song.rec & 15u);
+    ed_b(song.solo & ((1u << NTRK) - 1u));
+    ed_b(song.rec & ((1u << NTRK) - 1u));
     ed_b(song.sel);
     ed_b((uint32_t)(punch.req + 1));
     ed_b(clamp((int32_t)((song.cpu_q8 * 100u) >> 8), 0, 127));

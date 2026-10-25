@@ -52,6 +52,7 @@ void preview_init(void)
     fm6_init();
 }
 uint8_t *preview_buffer(void) { return transfer; }
+uint32_t preview_tracks(void) { return NTRK; }
 uint32_t preview_frames(void) { return CTL; }
 uint32_t preview_rate(void) { return FS; }
 void preview_track(uint32_t k, uint32_t engine, uint32_t preset)
@@ -80,7 +81,7 @@ void preview_global(uint32_t id, int32_t value)
 void preview_select(uint32_t k, uint32_t solo)
 {
     song.sel = (uint8_t)(k % NTRK);
-    song.solo = (uint8_t)(solo & 15u);
+    song.solo = (uint8_t)(solo & ((1u << NTRK) - 1u));
 }
 void preview_step(uint32_t k, uint32_t i)
 {

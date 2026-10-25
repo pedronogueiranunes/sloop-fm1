@@ -315,7 +315,12 @@ UI_SMALL static void tracks_edit(uint32_t slot, int32_t steps)
         d = &TP[P_PAN];
         break;
     }
+    {
+        int32_t old = *vp;
     *vp = (int16_t)clamp(*vp + accel(EN_K1 + slot, steps, d->names ? 0 : d->max - d->min), d->min, d->max);
+        if (slot == 1u || slot == 3u)
+            midi_cc_local(t, slot == 1u ? P_LEVEL : P_PAN, old, *vp);
+    }
     if (!is_drum(t) && (vp == &t->p[P_LEVEL] || vp == &t->p[P_PAN]))
         ml_knob(t, vp == &t->p[P_LEVEL] ? P_LEVEL : P_PAN);   /* MIDI LEARN: LEVEL, PAN (2.6) */
 }
@@ -481,7 +486,7 @@ UI_SMALL static void project_new(void)
     drum_mute = 0;                                      /* (2.6: the live mutes) */
     for (i = 0; i < G_COUNT; i++)
         if (i != G_SLOT && i != G_DRCH && i != G_SYNC && i != G_MIDI && i != G_ROUTE && (i < G_CH1 || i > G_CHOTH) &&
-            i != G_BEND && i != G_FXCH && i != G_DRMAP && i != G_RMCH && i != G_CLKOUT && i != G_FXFADE && i != G_CH4 && i != G_CH5)                                                                     /* (the
+            i != G_BEND && i != G_FXCH && i != G_DRMAP && i != G_RMCH && i != G_CLKOUT && i != G_FXFADE && i != G_CH4 && i != G_CH5 && i < G_DAW)                                                                     /* (the
                                                                  * FM-1's settings: GLO > MIDI 2.6) */
             song.g[i] = GP[i].def;
     song.solo = 0;
@@ -495,8 +500,8 @@ UI_SMALL static void edit_param(uint32_t slot, int32_t steps)
     int16_t *vp;
     const page_t *pg = cur_page();
     const param_desc_t *d;
-    uint32_t id = pg->id[slot];
-    int32_t v;
+    uint32_t id = page_id(pg, slot);
+    int32_t v, old;
     if (is_drum(TSEL) && !page_for_drum(pg))
         return;                                           /* "DRUM TRACK": nothing to edit here */
     if (pg->scope == SC_STEP) {
@@ -556,7 +561,12 @@ UI_SMALL static void edit_param(uint32_t slot, int32_t steps)
         return;
     v = d->names == ESYNC_NAMES || d->names == N_IBITS || d->names == N_IRATE ? names_turn(d, *vp, steps)   /* (a name a detent) */
                                     : clamp(*vp + accel(EN_K1 + slot, steps, d->names ? 0 : d->max - d->min), d->min, d->max);
+    old = *vp;
     *vp = (int16_t)v;
+    if (pg->scope == SC_GLOBAL)
+        midi_cc_global(id, old, v);
+    else
+        midi_cc_local(TSEL, id, old, v);
     if (pg->scope != SC_GLOBAL && p_lockable(id))
         ui.lock_par = (uint8_t)id;                        /* the SEQ layer's lock parameter: the last one touched */
     if (pg->scope != SC_GLOBAL)
@@ -625,7 +635,7 @@ UI_SMALL static uint32_t midi_held(void) { return mi_held[0] | mi_held[1] | mi_h
 UI_SMALL static void midi_entry(void)                              /* (top of ui_input: every frame) */
 {
     track_t *t = TSEL;
-    int on_page = mi_ok && song.seq_mode && cur_page()->scope == SC_STEP && !is_drum(t) && !song.rec && !rec_wait && !ft_on;
+    int on_page = mi_ok && song.g[G_DAW] != DAW_LIVE && song.seq_mode && cur_page()->scope == SC_STEP && !is_drum(t) && !song.rec && !rec_wait && !ft_on;
     int rec_arm = song.rec || rec_wait || ft_on;          /* (2.6) recording, armed or a free take: on which track */
     uint32_t rec_trk = ft_on ? ft_trk % NTRK : song.sel % NTRK;
     static uint8_t rh_st, rh_trk;                         /* its hint: 0 off, 1 not said yet, 2 said (or not needed) */
@@ -1071,10 +1081,34 @@ UI_SMALL static void remote_poll(void)
         fm1_irq_off();                              /* REMOTE OFF, another channel, or the USB link gone (a let-go
                                                      * never coming: REC would clear a track): every button up */
         remote_lbl = remote_up = 0;
+#if FELUCCA_ARRANGER
+        remote_section = 0;
+#endif
         fm1_irq_on();
         fm1_remote_btn = 0;
         return;
     }
+#if FELUCCA_ARRANGER
+    if (remote_section) {
+        uint32_t s = remote_section - 1u;
+        int ready = s < ARR_SCENES && ((arrangement_ready() >> s) & 1u);
+        fm1_irq_off();                             /* STOP/SPP may have cancelled it during validation */
+        if (remote_section == s + 1u) {
+            remote_section = 0;
+            if (ready && !arrangement_clock.running) {
+                if (song.playing) {
+                    chain_n = 0;
+                    live_req = (int8_t)s;
+                    live_bar = clk_beat >> 2;       /* always the next bar, including a request just after PLAY */
+                } else {
+                    section_load(s);
+                }
+                ui.force = 1;
+            }
+        }
+        fm1_irq_on();
+    }
+#endif
     for (l = 0; l < NB; l++) {
         uint32_t b = 1u << panel.btn[l], lb = 1u << l;
         if ((remote_up & lb) && (fm1_in.buttons & b)) {
@@ -1279,7 +1313,16 @@ UI_SMALL static void ui_input(void)
         if (ui.home) {
             int16_t *vp;
             const param_desc_t *d = home_param(k, &vp);
-            *vp = (int16_t)clamp(*vp + accel(EN_K1 + k, s, d->names ? 0 : d->max - d->min), d->min, d->max);   /* (a list: no jumps) */
+            {
+                int32_t old = *vp;
+            *vp = (int16_t)clamp(*vp + accel(EN_K1 + k, s, d->names ? 0 : d->max - d->min), d->min, d->max);
+                if (!is_drum(TSEL))
+                    midi_cc_local(TSEL, ENGINES[TSEL->eng_req % NENGINES]->macro[k & 3u], old, *vp);
+                else if (k < 2u)
+                    midi_cc_global(k ? G_DRREV : G_DRLVL, old, *vp);
+                else if (k == 2u)
+                    midi_cc_local(TSEL, P_PAN, old, *vp);
+            }   /* (a list: no jumps) */
             if (!is_drum(TSEL) && p_lockable(ENGINES[TSEL->eng_req % NENGINES]->macro[k & 3u]))
                 ui.lock_par = ENGINES[TSEL->eng_req % NENGINES]->macro[k & 3u];
             if (!is_drum(TSEL))
