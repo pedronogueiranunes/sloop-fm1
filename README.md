@@ -1,62 +1,61 @@
-<p align="center"><img src="assets/logo/sloop-logo.png" alt="SLOOP" width="420"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/branding/liveloop-white.svg">
+    <img src="assets/branding/liveloop-black.svg" alt="Liveloop" width="360">
+  </picture>
+</p>
 
-<p align="center"><b>A live groovebox firmware for the M-VAVE FM-1 — for any style.</b><br>
-Free and open source (GPL-3.0), based on <a href="https://github.com/hugelton/Felucca">Felucca</a> by Leo Kuroshita / Hügelton Instruments.</p>
+<p align="center"><strong>A live-performance groovebox firmware for the M-VAVE FM-1.</strong><br>
+An independent fork of <a href="https://github.com/isod89/sloop-fm1">SLOOP</a>, tailored for a six-track music workflow.</p>
 
 <p align="center">
-<a href="https://isod89.github.io/sloop-fm1/"><b>Install from the browser</b></a> ·
-<a href="GUIDE.md">Complete guide</a> ·
-<a href="SLOOP.md">Manual</a> ·
-<a href="DEMARRAGE-RAPIDE-FR.md">Guide en français</a> ·
-<a href="https://isod89.github.io/sloop-fm1/webapp/editor/">Web editor</a> ·
+<a href="#what-liveloop-changes">What changed</a> ·
+<a href="BRANDING.md">Visual identity</a> ·
+<a href="GUIDE.md">Guide</a> ·
+<a href="SLOOP.md">Original SLOOP manual</a> ·
 <a href="../../releases">Releases</a> ·
-<a href="../../issues">Report a bug</a>
+<a href="../../issues">Issues</a>
 </p>
 
 > [!IMPORTANT]
-> **This is a fork, not the official SLOOP.** sloop-peeeo is a personal fork of [SLOOP](https://github.com/isod89/sloop-fm1) by isod89, which is itself based on [Felucca](https://github.com/hugelton/Felucca) by Leo Kuroshita / Hügelton Instruments. It is maintained by Pedro Nogueira Nunes for playing live as peeeo, and the parts that make sense for everyone are offered back to SLOOP as pull requests. For the official firmware, the browser installer and support, use the [original repository](https://github.com/isod89/sloop-fm1).
+> **Liveloop is not the official SLOOP firmware.** It is Pedro Nogueira Nunes's (peeeo) independent, GPL-3.0-licensed fork of [SLOOP by isod89](https://github.com/isod89/sloop-fm1), which is based on [Felucca by Leo Kuroshita / Hügelton Instruments](https://github.com/hugelton/Felucca). Credit for those projects remains with their respective authors. For official SLOOP support, downloads, and the original browser installer, visit the [upstream repository](https://github.com/isod89/sloop-fm1). Bugs specific to Liveloop should be reported here.
 
-## What this fork changes
+## What Liveloop changes
 
-Based on **SLOOP 2.8**. The 2.8.1 update from the original project is not merged here yet. Everything not listed below works exactly as in SLOOP 2.8. The version on the boot screen tells the builds apart: official SLOOP shows `2.8`, this fork shows `2.8 PEEEO` or `2.8 PEEEO 6T5`.
+Liveloop currently builds on **SLOOP 2.8**, adding a six-track workflow and musical feedback features. The branding described in [BRANDING.md](BRANDING.md) is being developed separately; **Rubik, rainbow track colors, and the new firmware UI are not implemented in this branch**.
 
-| Branch | What it is | Boot screen |
-|---|---|---|
-| `main` | SLOOP 2.8 with chords on screen. Four tracks, like the original. | 2.8 PEEEO |
-| `six-tracks` | Everything in `main`, plus six tracks and the PROGRESSION visualiser. The build I play on. | 2.8 PEEEO 6T5 |
-| `chords-on-screen`, `six-tracks-upstream`, `progression-upstream` | Clean copies of single features, made on top of SLOOP for pull requests. | |
+| Branch | Purpose |
+|---|---|
+| `six-tracks` | Current personal firmware, five synth tracks and drums, with on-screen chords and PROGRESSION |
+| `main` | Older four-track personal build with chord visualization |
+| `liveloop-branding` | Logo, documentation and visual design direction only |
+| `midi-six-tracks` | Separate, ongoing MIDI / web-editor changes proposed for `six-tracks` |
 
-### Chords on screen (`main` and `six-tracks`)
+### Musical features in the personal firmware
 
-- On the TRACKS screen, the row of the selected synth track shows the chord you play in place of the engine name, for about two seconds.
-- New visualiser, style 13 CHORDS: the chord name in large letters, its degree in the key of the track (for example IV IN C MAJ), its notes, and a keyboard drawn like the FM-1's own 27 keys (F to G) that follows OCT and TRN.
-- It reads triads, 7ths, 6ths, 9ths, sus chords, dim7 and inversions such as C/E. Notes from the arp count, and so do keys pressed one after another on MONO and LEGATO sounds.
+- **Six tracks:** five synth parts plus drums, sharing eight voices. The drums are track 6.
+- **Chords on screen:** names for played chords on the TRACKS screen and a dedicated CHORDS visualizer with scale-degree information.
+- **PROGRESSION:** chord history and suggestions on a dedicated visualizer.
+- **Six-track project saves:** format 7 stores used steps and locks in a compact stream. Dense projects can show `PROJECT FULL`.
+- **Performance-oriented controls:** scrolling TRACKS and REC screens; GLO mute, solo and visible-track level control.
 
-### Six tracks (`six-tracks` only)
+### Compatibility and current boundaries
 
-- Five synth tracks and the drums. The drums move to track 6 and keep their orange colour. Tracks 4 and 5 are violet and pink, with CLAV and WURLI as their default sounds. The 8 voices are still shared between all tracks.
-- TRACKS and REC keep four rows of the same size and scroll to the selected or armed track.
-- GLO layer: keys 1 to 6 mute, 7 to 12 solo, 13 fill, 14 fill bar, 16 tap. KNOB 1 to 4 set the volume of the four tracks visible on TRACKS.
-- MIDI: channels CH4 and CH5 for tracks 4 and 5 (GLO > MIDI and a new MIDI CH page). The drum channel is labelled DRUM.
-- Projects are saved in a new format (7) that keeps all six tracks in the same flash space by storing only the steps and locks in use. A very dense project shows PROJECT FULL and the slot keeps what it had. Projects from SLOOP load with the drums on track 6 and tracks 4 and 5 empty.
+- The original SLOOP release and Liveloop's project-format-7 saves are **not interchangeable**. Back up projects before switching firmware.
+- The baseline `six-tracks` web editor still assumes four tracks, so **do not use the original editor with this build**. Work to add six-track editor and MIDI support is in a separate PR; it is not included here.
+- Some older visualizers and MIDI LEARN features still cover only the original three synth tracks and drums.
+- Existing custom themes only define four track colors. The [six-color Liveloop palette](BRANDING.md#colors-vibrant-rainbow-v1) is a design specification, not currently active in firmware.
+- Firmware builds and installation instructions must stay version-specific. Do not use the official SLOOP installer to install Liveloop.
 
-### PROGRESSION visualiser (`six-tracks` only)
+### Project history, docs and license
 
-- Style 14 PROGRESSION: the last six chords played on the track, each with its degree in the key, and three ideas for the next chord taken from the triads of the track's scale. It needs a seven-note scale on the track.
+Liveloop keeps the original SLOOP documentation below for historical context. Parts of that documentation describe the **official four-track SLOOP**, not all of Liveloop's modifications. The upstream project is available at [isod89/sloop-fm1](https://github.com/isod89/sloop-fm1), and its underlying Felucca work at [hugelton/Felucca](https://github.com/hugelton/Felucca).
 
-### Known limits of the six-track builds
+This modified firmware remains under **GPL-3.0**; retain the existing source-file copyright notices, the [LICENSE](LICENSE), and additional third-party license files.
 
-- The web editor still expects four tracks. Do not use it with these builds.
-- The per-track visualisers (VU METERS, BOUNCE, ORBIT, WIRES, LCD, SLOOP) show only tracks 1 to 3 and the drums.
-- MIDI LEARN works on tracks 1 to 3 and the drums, not on tracks 4 and 5.
-- Custom themes only cover the four original track colours.
-- Official SLOOP sees projects saved in format 7 as empty slots. Keep a backup before going back.
+## Original SLOOP README (upstream reference)
 
-### Going back to the official SLOOP
-
-Install the official firmware from the [SLOOP installer](https://isod89.github.io/sloop-fm1/) or with M-UPGRADE from M-VAVE. Bugs found in this fork belong here, not in the original project's issues.
-
-Builds of this fork are modified versions of SLOOP, changed in October 2026 and released under the same GPL-3.0 licence. All credit for SLOOP goes to isod89, and for Felucca to Leo Kuroshita / Hügelton Instruments. **Everything below this point is the original SLOOP README**, unchanged.
+The following is the original SLOOP README material retained for attribution and reference. It is not an up-to-date Liveloop feature or installation guide.
 
 ---
 
